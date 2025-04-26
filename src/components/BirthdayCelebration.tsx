@@ -3,7 +3,15 @@ import { useEffect, useState } from 'react';
 import { useBirthday } from '@/contexts/BirthdayContext';
 import { Dialog, DialogContent, DialogHeader, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import confetti from 'canvas-confetti';
+
+// Import confetti with error handling
+let confetti: any = null;
+try {
+  // Dynamic import for the confetti
+  confetti = require('canvas-confetti').default;
+} catch (error) {
+  console.error('Failed to load canvas-confetti:', error);
+}
 
 export const BirthdayCelebration = () => {
   const { birthdayPeople, showCelebration, toggleCelebration } = useBirthday();
@@ -14,12 +22,14 @@ export const BirthdayCelebration = () => {
       // Trigger confetti effect when celebration is shown
       const colors = ['#FFDEE2', '#E5DEFF', '#D3E4FD', '#FDE1D3', '#FEF7CD'];
       
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors
-      });
+      if (confetti) {
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors
+        });
+      }
       
       // Create floating confetti elements
       const elements = [];
