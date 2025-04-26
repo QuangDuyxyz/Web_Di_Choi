@@ -1,12 +1,21 @@
 
 import { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { User, AuthState } from '../types';
-import { mockUsers } from '../data/mockData';
+import { User, AuthState, RegisterFormData } from '../types';
+import { useToast } from '@/components/ui/use-toast';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 interface AuthContextType extends AuthState {
-  login: (username: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  login: (email: string, password: string) => Promise<boolean>;
+  register: (data: RegisterFormData) => Promise<boolean>;
+  logout: () => Promise<void>;
   isAdmin: boolean;
+  updateUser: (user: User) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -17,58 +26,143 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     user: null,
     isLoading: true
   });
+  const { toast } = useToast();
 
   useEffect(() => {
-    // Check for saved user in localStorage (mock authentication persistence)
-    const savedUser = localStorage.getItem('friendverse-user');
-    
-    if (savedUser) {
-      try {
-        const user = JSON.parse(savedUser) as User;
-        setAuthState({
-          isAuthenticated: true,
-          user,
-          isLoading: false
-        });
-      } catch (error) {
-        console.error('Failed to parse saved user', error);
-        localStorage.removeItem('friendverse-user');
+    // Check initial auth state
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        getUserProfile(session.user.id);
+      } else {
+        setAuthState(prev => ({ ...prev, isLoading: false }));
+      }
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        getUserProfile(session.user.id);
+      } else {
         setAuthState({
           isAuthenticated: false,
           user: null,
           isLoading: false
         });
       }
-    } else {
-      setAuthState(prev => ({ ...prev, isLoading: false }));
-    }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const login = async (username: string, password: string): Promise<boolean> => {
-    // Mock authentication - in a real app, you would validate with a backend
-    const user = mockUsers.find(u => u.username === username);
-    
-    // Simple mock authentication (in a real app, you would check the password)
-    if (user) {
+  const getUserProfile = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      console.error('Error fetching user profile:', error);
       setAuthState({
-        isAuthenticated: true,
-        user,
+        isAuthenticated: false,
+        user: null,
         isLoading: false
       });
-      localStorage.setItem('friendverse-user', JSON.stringify(user));
-      return true;
+      return;
     }
-    
-    return false;
-  };
 
-  const logout = () => {
     setAuthState({
-      isAuthenticated: false,
-      user: null,
+      isAuthenticated: true,
+      user: data,
       isLoading: false
     });
-    localStorage.removeItem('friendverse-user');
+  };
+
+  const register = async (data: RegisterFormData): Promise<boolean> => {
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+      });
+
+      if (authError) throw authError;
+
+      if (authData.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: authData.user.id,
+              username: data.username,
+              display_name: data.displayName,
+              birthdate: data.birthdate,
+              role: 'user',
+              avatar: `https://api.dicebear.com/7.x/avatars/svg?seed=${data.username}`,
+            },
+          ]);
+
+        if (profileError) throw profileError;
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Registration error:', error);
+      return false;
+    }
+  };
+
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      console.error('Login error:', error);
+      return false;
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+  const updateUser = async (user: User) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        username: user.username,
+        display_name: user.displayName,
+        birthdate: user.birthdate,
+      })
+      .eq('id', user.id);
+
+    if (error) throw error;
+
+    if (user.id === authState.user?.id) {
+      setAuthState(prev => ({
+        ...prev,
+        user: { ...prev.user!, ...user }
+      }));
+    }
+  };
+
+  const deleteUser = async (userId: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', userId);
+
+    if (error) throw error;
   };
 
   return (
@@ -76,8 +170,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       value={{
         ...authState,
         login,
+        register,
         logout,
-        isAdmin: authState.user?.role === 'admin'
+        isAdmin: authState.user?.role === 'admin',
+        updateUser,
+        deleteUser,
       }}
     >
       {children}
@@ -92,3 +189,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+

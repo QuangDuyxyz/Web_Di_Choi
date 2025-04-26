@@ -1,13 +1,14 @@
-
 export type UserRole = 'admin' | 'user';
 
 export interface User {
   id: string;
+  email: string;
   username: string;
   displayName: string;
   birthdate: Date | string;
   avatar: string;
   role: UserRole;
+  created_at?: string;
 }
 
 export type EventType = 'birthday' | 'anniversary' | 'trip' | 'meeting' | 'other';
@@ -35,4 +36,12 @@ export interface AuthState {
   isAuthenticated: boolean;
   user: User | null;
   isLoading: boolean;
+}
+
+export interface RegisterFormData {
+  email: string;
+  password: string;
+  username: string;
+  displayName: string;
+  birthdate: string;
 }

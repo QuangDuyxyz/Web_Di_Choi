@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -66,23 +65,19 @@ const Login = () => {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <label htmlFor="username" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                Tên đăng nhập
-              </label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="username"
-                placeholder="Nhập tên đăng nhập"
+                id="email"
+                type="email"
+                placeholder="Nhập email của bạn"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
                 disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label htmlFor="password" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  Mật khẩu
-                </label>
+                <Label htmlFor="password">Mật khẩu</Label>
               </div>
               <Input
                 id="password"
@@ -90,7 +85,6 @@ const Login = () => {
                 placeholder="Nhập mật khẩu"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
                 disabled={isLoading}
               />
             </div>
@@ -103,13 +97,16 @@ const Login = () => {
             </Button>
           </form>
           
-          <div className="mt-4 text-center text-sm">
-            <p className="text-muted-foreground">
-              {/* In mock version, tell users about mock accounts */}
-              Tài khoản để đăng nhập thử: <br />
-              Admin: admin <br />
-              User: minh, linh, quan, thu <br />
-              (Không cần mật khẩu trong phiên bản demo này)
+          <div className="mt-4 text-center space-y-2">
+            <p className="text-sm">
+              Chưa có tài khoản?{' '}
+              <button
+                type="button"
+                onClick={() => navigate('/register')}
+                className="text-primary hover:underline"
+              >
+                Đăng ký ngay
+              </button>
             </p>
           </div>
         </CardContent>
