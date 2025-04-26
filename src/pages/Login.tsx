@@ -9,7 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from "@/components/ui/use-toast";
 
 const Login = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
@@ -18,10 +18,10 @@ const Login = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username || !password) {
+    if (!email || !password) {
       toast({
         title: "Lỗi đăng nhập",
-        description: "Vui lòng nhập tên đăng nhập và mật khẩu",
+        description: "Vui lòng nhập email và mật khẩu",
         variant: "destructive"
       });
       return;
@@ -30,7 +30,7 @@ const Login = () => {
     setIsLoading(true);
     
     try {
-      const success = await login(username, password);
+      const success = await login(email, password);
       if (success) {
         toast({
           title: "Đăng nhập thành công",
@@ -40,7 +40,7 @@ const Login = () => {
       } else {
         toast({
           title: "Lỗi đăng nhập",
-          description: "Tên đăng nhập hoặc mật khẩu không đúng",
+          description: "Email hoặc mật khẩu không đúng",
           variant: "destructive"
         });
       }
@@ -72,8 +72,8 @@ const Login = () => {
                 id="email"
                 type="email"
                 placeholder="Nhập email của bạn"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 disabled={isLoading}
               />
             </div>
