@@ -1,14 +1,18 @@
+
 import { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import { User, AuthState, RegisterFormData } from '../types';
 import { useToast } from '@/components/ui/use-toast';
 import { createClient } from '@supabase/supabase-js';
+import { mockUsers } from '@/data/mockData';
 
-// Safely initialize Supabase with environment variables or fallback to empty strings
-// to prevent runtime errors, but this will still require proper setup
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Safely initialize Supabase with environment variables or use mock data if not provided
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Create Supabase client only if both URL and key are present
+const supabase = supabaseUrl && supabaseAnonKey ? 
+  createClient(supabaseUrl, supabaseAnonKey) : 
+  null;
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<boolean>;
@@ -30,6 +34,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
 
   useEffect(() => {
+    if (!supabase) {
+      console.warn('Supabase credentials not configured. Using mock data.');
+      // Using mock admin user for development
+      setAuthState({
+        isAuthenticated: true,
+        user: mockUsers[0], // Admin user from mock data
+        isLoading: false
+      });
+      return;
+    }
+
     // Check initial auth state
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
@@ -53,11 +68,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => {
-      subscription.unsubscribe();
+      if (subscription) subscription.unsubscribe();
     };
   }, []);
 
   const getUserProfile = async (userId: string) => {
+    if (!supabase) return;
+    
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -82,6 +99,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const register = async (data: RegisterFormData): Promise<boolean> => {
+    if (!supabase) {
+      toast({
+        title: "Development Mode",
+        description: "Registration simulated. Supabase not configured.",
+      });
+      return true;
+    }
+    
     try {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: data.email,
@@ -115,6 +140,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const login = async (email: string, password: string): Promise<boolean> => {
+    if (!supabase) {
+      // In development mode with no Supabase, simulate login with mock users
+      const mockUser = mockUsers.find(user => user.email === email);
+      if (mockUser && password === 'password') {
+        setAuthState({
+          isAuthenticated: true,
+          user: mockUser,
+          isLoading: false
+        });
+        toast({
+          title: "Development Mode",
+          description: `Logged in as ${mockUser.displayName}`,
+        });
+        return true;
+      }
+      toast({
+        title: "Login Failed",
+        description: "Invalid credentials",
+        variant: "destructive"
+      });
+      return false;
+    }
+    
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -130,6 +178,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = async () => {
+    if (!supabase) {
+      // Mock logout
+      setAuthState({
+        isAuthenticated: false,
+        user: null,
+        isLoading: false
+      });
+      return;
+    }
+    
     try {
       await supabase.auth.signOut();
     } catch (error) {
@@ -138,6 +196,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const updateUser = async (user: User) => {
+    if (!supabase) {
+      // Mock update
+      toast({
+        title: "Development Mode",
+        description: "User update simulated",
+      });
+      if (authState.user?.id === user.id) {
+        setAuthState(prev => ({
+          ...prev,
+          user: { ...prev.user!, ...user }
+        }));
+      }
+      return;
+    }
+    
     const { error } = await supabase
       .from('profiles')
       .update({
@@ -158,6 +231,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const deleteUser = async (userId: string) => {
+    if (!supabase) {
+      // Mock delete
+      toast({
+        title: "Development Mode",
+        description: "User deletion simulated",
+      });
+      return;
+    }
+    
     const { error } = await supabase
       .from('profiles')
       .delete()

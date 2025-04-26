@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/Header';
@@ -7,13 +6,16 @@ import { MemberManagement } from '@/components/MemberManagement';
 import { useAuth } from '@/contexts/AuthContext';
 import { User } from '@/types';
 import { createClient } from '@supabase/supabase-js';
+import { mockUsers } from '@/data/mockData';
 
-// Safely initialize Supabase with environment variables or fallback to empty strings
-// to prevent runtime errors, but this will still require proper setup
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Safely initialize Supabase with environment variables
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Create Supabase client only if both URL and key are present
+const supabase = supabaseUrl && supabaseAnonKey ? 
+  createClient(supabaseUrl, supabaseAnonKey) : 
+  null;
 
 const Members = () => {
   const { isAuthenticated, isAdmin, updateUser, deleteUser } = useAuth();
@@ -32,6 +34,15 @@ const Members = () => {
 
   const fetchMembers = async () => {
     try {
+      // If Supabase is not configured, use mock data
+      if (!supabase) {
+        console.warn('Supabase not configured. Using mock data for members.');
+        setMembers(mockUsers);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Otherwise fetch from Supabase
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -41,6 +52,8 @@ const Members = () => {
       setMembers(data);
     } catch (error) {
       console.error('Error fetching members:', error);
+      // Fallback to mock data in case of error
+      setMembers(mockUsers);
     } finally {
       setIsLoading(false);
     }

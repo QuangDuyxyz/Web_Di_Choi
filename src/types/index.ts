@@ -2,10 +2,10 @@ export type UserRole = 'admin' | 'user';
 
 export interface User {
   id: string;
-  email: string;
   username: string;
+  email: string;
   displayName: string;
-  birthdate: Date | string;
+  birthdate: string | Date;
   avatar: string;
   role: UserRole;
   created_at?: string;
