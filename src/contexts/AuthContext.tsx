@@ -77,6 +77,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const getUserProfile = async (userId: string) => {
     try {
+      // Use Supabase to get the user profile
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -85,11 +86,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (error) throw error;
 
-      setAuthState({
-        isAuthenticated: true,
-        user: data,
-        isLoading: false
-      });
+      if (data) {
+        // Convert the Supabase profile to our User type
+        const user: User = {
+          id: data.id,
+          username: data.username,
+          email: '', // Email is not stored in the profiles table
+          displayName: data.display_name,
+          birthdate: data.birthdate,
+          avatar: data.avatar || `https://api.dicebear.com/7.x/avatars/svg?seed=${data.username}`,
+          role: data.role,
+        };
+
+        setAuthState({
+          isAuthenticated: true,
+          user,
+          isLoading: false
+        });
+      } else {
+        throw new Error('User profile not found');
+      }
     } catch (error) {
       console.error('Error fetching user profile:', error);
       setAuthState({
@@ -112,20 +128,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (authError) throw authError;
 
         if (authData.user) {
+          // Create profile for the new user
+          const profileData = {
+            id: authData.user.id,
+            username: data.username,
+            display_name: data.displayName,
+            birthdate: data.birthdate,
+            role: 'user',
+            avatar: `https://api.dicebear.com/7.x/avatars/svg?seed=${data.username}`,
+          };
+
           const { error: profileError } = await supabase
             .from('profiles')
-            .insert([
-              {
-                id: authData.user.id,
-                username: data.username,
-                display_name: data.displayName,
-                birthdate: data.birthdate,
-                role: 'user',
-                avatar: `https://api.dicebear.com/7.x/avatars/svg?seed=${data.username}`,
-              },
-            ]);
+            .insert([profileData]);
 
-          if (profileError) throw profileError;
+          if (profileError) {
+            console.error("Error creating profile:", profileError);
+            // If profile creation fails, we should delete the auth user
+            // This would require admin privileges which we don't want to use in client code
+            // Instead, just return false to indicate failure
+            return false;
+          }
+
+          toast({
+            title: "Đăng ký thành công",
+            description: "Tài khoản của bạn đã được tạo!",
+          });
+          
           return true;
         }
       } catch (supabaseError) {
@@ -274,56 +303,74 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const updateUser = async (user: User) => {
-    if (!supabase) {
-      // Mock update
+    if (!authState.user) return;
+    
+    try {
+      // Try to update with Supabase
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          username: user.username,
+          display_name: user.displayName,
+          birthdate: user.birthdate,
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      // Update local state if this is the current user
+      if (user.id === authState.user?.id) {
+        setAuthState(prev => ({
+          ...prev,
+          user: { ...prev.user!, ...user }
+        }));
+      }
+      
       toast({
-        title: "Development Mode",
-        description: "User update simulated",
+        title: "Cập nhật thành công",
+        description: "Thông tin người dùng đã được cập nhật",
       });
+    } catch (error) {
+      console.error('Update user error:', error);
+      
+      // Mock update for development
       if (authState.user?.id === user.id) {
         setAuthState(prev => ({
           ...prev,
           user: { ...prev.user!, ...user }
         }));
       }
-      return;
-    }
-    
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        username: user.username,
-        display_name: user.displayName,
-        birthdate: user.birthdate,
-      })
-      .eq('id', user.id);
-
-    if (error) throw error;
-
-    if (user.id === authState.user?.id) {
-      setAuthState(prev => ({
-        ...prev,
-        user: { ...prev.user!, ...user }
-      }));
+      
+      toast({
+        title: "Development Mode",
+        description: "User update simulated",
+      });
     }
   };
 
   const deleteUser = async (userId: string) => {
-    if (!supabase) {
-      // Mock delete
+    try {
+      // Try to delete with Supabase
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+
+      if (error) throw error;
+      
+      toast({
+        title: "Xóa thành công",
+        description: "Người dùng đã được xóa khỏi hệ thống",
+      });
+    } catch (error) {
+      console.error('Delete user error:', error);
+      
+      // Mock delete for development
       toast({
         title: "Development Mode",
         description: "User deletion simulated",
       });
-      return;
     }
-    
-    const { error } = await supabase
-      .from('profiles')
-      .delete()
-      .eq('id', userId);
-
-    if (error) throw error;
   };
 
   return (

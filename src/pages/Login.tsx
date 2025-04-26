@@ -50,6 +50,7 @@ const Login = () => {
         description: "Có lỗi xảy ra khi đăng nhập",
         variant: "destructive"
       });
+      console.error("Login error:", error);
     } finally {
       setIsLoading(false);
     }
