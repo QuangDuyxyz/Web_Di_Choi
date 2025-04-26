@@ -1,48 +1,52 @@
+import { EventType, Event, User } from '../types';
 
-import { Event, User, EventType } from '../types';
-
-// Mock Users
+// Mock user data
 export const mockUsers: User[] = [
   {
     id: '1',
     username: 'admin',
-    displayName: 'Admin User',
-    birthdate: new Date('1995-05-15').toISOString(),
-    avatar: 'https://api.dicebear.com/7.x/micah/svg?seed=John',
-    role: 'admin'
+    email: 'admin@friendverse.com',
+    displayName: 'Admin',
+    birthdate: '1990-01-01',
+    avatar: 'https://api.dicebear.com/7.x/avatars/svg?seed=admin',
+    role: 'admin',
   },
   {
     id: '2',
     username: 'minh',
-    displayName: 'Minh Nguyen',
-    birthdate: new Date('1997-08-23').toISOString(),
-    avatar: 'https://api.dicebear.com/7.x/micah/svg?seed=Minh',
-    role: 'user'
+    email: 'minh@friendverse.com',
+    displayName: 'Minh',
+    birthdate: '1995-05-15',
+    avatar: 'https://api.dicebear.com/7.x/avatars/svg?seed=minh',
+    role: 'user',
   },
   {
     id: '3',
     username: 'linh',
-    displayName: 'Linh Tran',
-    birthdate: new Date('1996-04-30').toISOString(),
-    avatar: 'https://api.dicebear.com/7.x/micah/svg?seed=Linh',
-    role: 'user'
+    email: 'linh@friendverse.com',
+    displayName: 'Linh',
+    birthdate: '1997-08-22',
+    avatar: 'https://api.dicebear.com/7.x/avatars/svg?seed=linh',
+    role: 'user',
   },
   {
     id: '4',
-    username: 'quan',
-    displayName: 'Quan Le',
-    birthdate: new Date('1995-11-12').toISOString(),
-    avatar: 'https://api.dicebear.com/7.x/micah/svg?seed=Quan',
-    role: 'user'
+    username: 'duc',
+    email: 'duc@friendverse.com',
+    displayName: 'Đức',
+    birthdate: '1994-11-10',
+    avatar: 'https://api.dicebear.com/7.x/avatars/svg?seed=duc',
+    role: 'user',
   },
   {
     id: '5',
-    username: 'thu',
-    displayName: 'Thu Pham',
-    birthdate: new Date('1998-01-20').toISOString(),
-    avatar: 'https://api.dicebear.com/7.x/micah/svg?seed=Thu',
-    role: 'user'
-  }
+    username: 'hien',
+    email: 'hien@friendverse.com',
+    displayName: 'Hiền',
+    birthdate: '1996-03-28',
+    avatar: 'https://api.dicebear.com/7.x/avatars/svg?seed=hien',
+    role: 'user',
+  },
 ];
 
 // Function to create events

@@ -1,13 +1,14 @@
-
 import { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import { User, AuthState, RegisterFormData } from '../types';
 import { useToast } from '@/components/ui/use-toast';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+// Safely initialize Supabase with environment variables or fallback to empty strings
+// to prevent runtime errors, but this will still require proper setup
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<boolean>;
@@ -189,4 +190,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
