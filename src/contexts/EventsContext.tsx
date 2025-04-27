@@ -3,6 +3,7 @@ import { createContext, useState, useContext, ReactNode, useEffect } from 'react
 import { Event } from '../types';
 import { mockEvents } from '../data/mockData';
 import { useToast } from "@/components/ui/use-toast";
+import { SyncService } from '@/lib/syncService';
 
 interface EventsContextType {
   events: Event[];
@@ -24,39 +25,56 @@ export const EventsProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load events from localStorage or use mock data
-    const savedEvents = localStorage.getItem('friendverse-events');
-    
-    if (savedEvents) {
-      try {
-        const parsedEvents = JSON.parse(savedEvents);
-        if (Array.isArray(parsedEvents) && parsedEvents.length > 0) {
-          setEvents(parsedEvents);
-          console.log('Loaded events from localStorage:', parsedEvents.length);
-        } else {
-          console.warn('Saved events array is empty or invalid, using mock data');
+    // Kiểm tra đồng bộ từ cloud trước
+    const cloudData = SyncService.loadFromCloud();
+    if (cloudData && cloudData.events && cloudData.events.length > 0) {
+      setEvents(cloudData.events);
+      console.log('Loaded events from cloud sync:', cloudData.events.length);
+    } else {
+      // Nếu không có dữ liệu từ cloud, thử từ localStorage
+      const savedEvents = localStorage.getItem('friendverse-events');
+      
+      if (savedEvents) {
+        try {
+          const parsedEvents = JSON.parse(savedEvents);
+          if (Array.isArray(parsedEvents) && parsedEvents.length > 0) {
+            setEvents(parsedEvents);
+            console.log('Loaded events from localStorage:', parsedEvents.length);
+            
+            // Đồng bộ lên cloud
+            SyncService.saveToCloud({ events: parsedEvents });
+          } else {
+            console.warn('Saved events array is empty or invalid, using mock data');
+            setEvents(mockEvents);
+            localStorage.setItem('friendverse-events', JSON.stringify(mockEvents));
+            SyncService.saveToCloud({ events: mockEvents });
+          }
+        } catch (error) {
+          console.error('Failed to parse saved events', error);
           setEvents(mockEvents);
           localStorage.setItem('friendverse-events', JSON.stringify(mockEvents));
+          SyncService.saveToCloud({ events: mockEvents });
         }
-      } catch (error) {
-        console.error('Failed to parse saved events', error);
+      } else {
+        console.log('No saved events found, using mock data');
         setEvents(mockEvents);
         localStorage.setItem('friendverse-events', JSON.stringify(mockEvents));
+        SyncService.saveToCloud({ events: mockEvents });
       }
-    } else {
-      console.log('No saved events found, using mock data');
-      setEvents(mockEvents);
-      localStorage.setItem('friendverse-events', JSON.stringify(mockEvents));
     }
   }, []);
 
-  // Save events to localStorage whenever they change
+  // Save events to localStorage and cloud whenever they change
   useEffect(() => {
     // Only save if events array is valid
     if (Array.isArray(events) && events.length >= 0) {
       try {
+        // Lưu vào localStorage
         localStorage.setItem('friendverse-events', JSON.stringify(events));
         console.log('Saved events to localStorage:', events.length);
+        
+        // Đồng bộ lên cloud
+        SyncService.saveToCloud({ events });
       } catch (error) {
         console.error('Failed to save events to localStorage:', error);
       }
@@ -135,7 +153,7 @@ export const EventsProvider = ({ children }: { children: ReactNode }) => {
   const resetEvents = () => {
     try {
       // Xóa tất cả dữ liệu cũ trong localStorage
-      const keysToKeep = ['theme']; // Danh sách các key cần giữ lại (nếu có)
+      const keysToKeep = ['theme', 'friendverse_cloud_data']; // Thêm cloud_data vào danh sách cần giữ lại
       
       // Lấy tất cả các key trong localStorage
       for (let i = 0; i < localStorage.length; i++) {
@@ -149,51 +167,46 @@ export const EventsProvider = ({ children }: { children: ReactNode }) => {
       
       // Đặt lại dữ liệu sự kiện mặc định
       setEvents(mockEvents);
-      
-      // Lưu dữ liệu mặc định vào localStorage
       localStorage.setItem('friendverse-events', JSON.stringify(mockEvents));
       
+      // Đồng bộ dữ liệu mặc định lên cloud
+      SyncService.saveToCloud({ events: mockEvents });
+      
       toast({
-        title: "Dữ liệu đã được xóa hoàn toàn",
-        description: "Tất cả dữ liệu cũ đã bị xóa và đã được khôi phục về trạng thái ban đầu."
+        title: "Đã reset dữ liệu",
+        description: "Tất cả dữ liệu đã được đặt lại về mặc định.",
+        variant: "destructive"
       });
-      
-      console.log('Tất cả dữ liệu đã được xóa và khôi phục về mặc định');
-      
-      // Tải lại trang để đảm bảo tất cả dữ liệu được làm mới
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
     } catch (error) {
       console.error('Lỗi khi reset dữ liệu:', error);
       toast({
-        title: "Lỗi",
-        description: "Có lỗi xảy ra khi reset dữ liệu.",
+        title: "Lỗi reset dữ liệu",
+        description: "Đã xảy ra lỗi khi reset dữ liệu: " + (error as Error).message,
         variant: "destructive"
       });
     }
   };
-  
+
   // Hàm để xóa tất cả sự kiện (không xóa các dữ liệu khác)
   const clearAllEvents = () => {
     try {
-      // Đặt mảng sự kiện thành rỗng
+      // Xóa tất cả sự kiện
       setEvents([]);
-      
-      // Lưu mảng rỗng vào localStorage
       localStorage.setItem('friendverse-events', JSON.stringify([]));
       
-      toast({
-        title: "Xóa sự kiện thành công",
-        description: "Tất cả sự kiện đã được xóa."
-      });
+      // Đồng bộ dữ liệu trống lên cloud
+      SyncService.saveToCloud({ events: [] });
       
-      console.log('Tất cả sự kiện đã được xóa');
-    } catch (error) {
-      console.error('Lỗi khi xóa sự kiện:', error);
       toast({
-        title: "Lỗi",
-        description: "Có lỗi xảy ra khi xóa sự kiện.",
+        title: "Đã xóa tất cả sự kiện",
+        description: "Tất cả sự kiện đã bị xóa.",
+        variant: "destructive"
+      });
+    } catch (error) {
+      console.error('Lỗi khi xóa tất cả sự kiện:', error);
+      toast({
+        title: "Lỗi khi xóa sự kiện",
+        description: "Đã xảy ra lỗi khi xóa tất cả sự kiện: " + (error as Error).message,
         variant: "destructive"
       });
     }

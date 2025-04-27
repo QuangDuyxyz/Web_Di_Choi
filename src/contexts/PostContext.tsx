@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { User } from '@/types';
 import { useAuth } from './AuthContext';
 import { useToast } from '@/components/ui/use-toast';
+import { SyncService } from '@/lib/syncService';
 
 interface PostContextType {
   posts: PostWithComments[];
@@ -33,27 +34,48 @@ export const PostProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // Khởi tạo dữ liệu từ localStorage nếu có
+  // Khởi tạo dữ liệu từ cloud hoặc localStorage
   useEffect(() => {
     try {
+      // Ưu tiên lấy dữ liệu từ cloud trước
+      const cloudData = SyncService.loadFromCloud();
+      if (cloudData && cloudData.posts && cloudData.posts.length > 0) {
+        setPosts(cloudData.posts as PostWithComments[]);
+        console.log('Loaded posts from cloud sync:', cloudData.posts.length);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Nếu không có dữ liệu từ cloud, thử từ localStorage
       const savedPosts = localStorage.getItem('posts');
       if (savedPosts) {
-        setPosts(JSON.parse(savedPosts));
+        const parsedPosts = JSON.parse(savedPosts);
+        setPosts(parsedPosts);
+        console.log('Loaded posts from localStorage:', parsedPosts.length);
+        
+        // Đồng bộ lên cloud
+        SyncService.saveToCloud({ posts: parsedPosts });
       }
       setIsLoading(false);
     } catch (error) {
-      console.error('Error loading posts from localStorage:', error);
+      console.error('Error loading posts:', error);
       setIsLoading(false);
     }
   }, []);
 
-  // Lưu dữ liệu posts vào localStorage khi có thay đổi
+  // Lưu dữ liệu posts vào localStorage và cloud khi có thay đổi
   useEffect(() => {
     if (!isLoading) {
       try {
+        // Lưu vào localStorage
         localStorage.setItem('posts', JSON.stringify(posts));
+        
+        // Đồng bộ lên cloud
+        SyncService.saveToCloud({ posts });
+        
+        console.log('Saved posts to storage and cloud:', posts.length);
       } catch (error) {
-        console.error('Error saving posts to localStorage:', error);
+        console.error('Error saving posts:', error);
       }
     }
   }, [posts, isLoading]);
@@ -84,6 +106,11 @@ export const PostProvider = ({ children }: { children: ReactNode }) => {
       };
 
       setPosts(prevPosts => [newPost, ...prevPosts]);
+      
+      // Đồng bộ posts lên cloud ngay lập tức
+      const updatedPosts = [newPost, ...posts];
+      localStorage.setItem('posts', JSON.stringify(updatedPosts));
+      SyncService.saveToCloud({ posts: updatedPosts });
 
       toast({
         title: "Thành công",
@@ -104,7 +131,12 @@ export const PostProvider = ({ children }: { children: ReactNode }) => {
 
   const deletePost = async (postId: string): Promise<boolean> => {
     try {
-      setPosts(prevPosts => prevPosts.filter(post => post.id !== postId));
+      const updatedPosts = posts.filter(post => post.id !== postId);
+      setPosts(updatedPosts);
+      
+      // Đồng bộ posts mới lên cloud ngay lập tức
+      localStorage.setItem('posts', JSON.stringify(updatedPosts));
+      SyncService.saveToCloud({ posts: updatedPosts });
       
       toast({
         title: "Thành công",

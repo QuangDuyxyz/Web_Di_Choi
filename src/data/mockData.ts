@@ -14,6 +14,10 @@ export const mockUsers: User[] = [
   }
 ];
 
+// Mật khẩu cho tài khoản người dùng và admin
+export const MOCK_PASSWORD = 'password123';
+export const MOCK_ADMIN_PASSWORD = 'admin123';
+
 // Hàm tạo sự kiện rỗng - không có sự kiện mẫu nào
 const createEvents = () => {
   return [] as Event[];

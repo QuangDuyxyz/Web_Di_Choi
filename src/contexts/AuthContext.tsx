@@ -1,9 +1,9 @@
-
-import { createContext, useState, useContext, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthState, RegisterFormData, UserRole } from '../types';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { mockUsers } from '@/data/mockData';
+import { mockUsers, MOCK_PASSWORD, MOCK_ADMIN_PASSWORD } from '@/data/mockData';
+import { SyncService } from '@/lib/syncService';
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<boolean>;
@@ -17,8 +17,7 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock password for development
-const MOCK_PASSWORD = 'password';
+// Sử dụng MOCK_PASSWORD và MOCK_ADMIN_PASSWORD từ mockData.ts
 
 // Khai báo kiểu cho window để thêm thuộc tính registeredMockUsers
 declare global {
@@ -27,14 +26,36 @@ declare global {
   }
 }
 
-// Store registered users during the session (development only)
+// Store registered users with passwords (development only)
 // Khôi phục dữ liệu từ localStorage nếu có
+
+// Tạo kiểu dữ liệu cho người dùng kèm mật khẩu
+type RegisteredUserWithPassword = User & { password: string };
+
+declare global {
+  interface Window {
+    registeredMockUsers: User[];
+    registeredUserPasswords: Record<string, string>; // Lưu mật khẩu dưới dạng { userId: password }
+  }
+}
+
 try {
+  // Khôi phục danh sách người dùng
   const savedUsers = localStorage.getItem('registeredMockUsers');
   window.registeredMockUsers = savedUsers ? JSON.parse(savedUsers) : [];
+  
+  // Khôi phục mật khẩu của người dùng
+  const savedPasswords = localStorage.getItem('registeredUserPasswords');
+  window.registeredUserPasswords = savedPasswords ? JSON.parse(savedPasswords) : {};
+  
+  console.log('Loaded users and passwords:', {
+    users: window.registeredMockUsers.length,
+    passwords: Object.keys(window.registeredUserPasswords || {}).length
+  });
 } catch (error) {
   console.error('Error loading registered users from localStorage:', error);
   window.registeredMockUsers = [];
+  window.registeredUserPasswords = {};
 }
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -57,6 +78,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               isLoading: true
             };
           }
+          
+          // Kiểm tra xem user có tồn tại trong danh sách người dùng đã đăng ký không
+          if (parsedState.isAuthenticated && parsedState.user) {
+            const userId = parsedState.user.id;
+            
+            // Nếu là admin thì cho phép đăng nhập
+            if (userId === mockUsers[0].id) {
+              return {
+                ...parsedState,
+                isLoading: false
+              };
+            }
+            
+            // Nếu là người dùng đã đăng ký, kiểm tra xem có trong danh sách không
+            const existingUser = window.registeredMockUsers.find(u => u.id === userId);
+            if (!existingUser) {
+              console.warn('User in auth state not found in registered users:', userId);
+              return {
+                isAuthenticated: false,
+                user: null,
+                isLoading: false
+              };
+            }
+            
+            // Kiểm tra và khôi phục ảnh đại diện từ cloud nếu có
+            const savedAvatar = SyncService.getUserAvatar(userId);
+            if (savedAvatar && parsedState.user) {
+              parsedState.user.avatar = savedAvatar;
+              console.log('Restored avatar from cloud for user:', userId);
+            }
+          }
+          
           return {
             ...parsedState,
             isLoading: false // Đã load xong
@@ -90,6 +143,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (parsed.isAuthenticated !== authState.isAuthenticated) {
             console.error('Auth state not saved correctly!');
           }
+        }
+        
+        // Lưu ảnh đại diện của người dùng vào cloud khi họ đăng nhập
+        if (authState.isAuthenticated && authState.user && authState.user.avatar) {
+          SyncService.saveUserAvatar(authState.user.id, authState.user.avatar);
         }
       } catch (error) {
         console.error('Error saving auth state to localStorage:', error);
@@ -255,12 +313,48 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         role: 'user'
       };
       
+      // Khởi tạo window.registeredUserPasswords nếu chưa có
+      if (!window.registeredUserPasswords) {
+        window.registeredUserPasswords = {};
+      }
+      
+      // Lưu mật khẩu riêng biệt
+      window.registeredUserPasswords[newId] = data.password;
+      
+      // Lưu ảnh đại diện vào cloud
+      SyncService.saveUserAvatar(newId, newUser.avatar);
+      
       // Add to local storage of registered users
       window.registeredMockUsers.push(newUser);
       
       // Lưu vào localStorage để dữ liệu không bị mất khi làm mới trang
       try {
+        // Lưu danh sách người dùng
         localStorage.setItem('registeredMockUsers', JSON.stringify(window.registeredMockUsers));
+        
+        // Lưu danh sách mật khẩu
+        localStorage.setItem('registeredUserPasswords', JSON.stringify(window.registeredUserPasswords));
+        
+        // Thêm dữ liệu vào cloud storage nếu có
+        const cloudData = localStorage.getItem('friendverse_cloud_data');
+        if (cloudData) {
+          try {
+            const parsedData = JSON.parse(cloudData);
+            parsedData.users = window.registeredMockUsers;
+            parsedData.passwords = window.registeredUserPasswords;
+            localStorage.setItem('friendverse_cloud_data', JSON.stringify(parsedData));
+          } catch (e) {
+            console.error('Error updating cloud data:', e);
+          }
+        } else {
+          // Tạo mới nếu chưa có
+          const newCloudData = {
+            users: window.registeredMockUsers,
+            passwords: window.registeredUserPasswords,
+            lastUpdated: new Date().toISOString()
+          };
+          localStorage.setItem('friendverse_cloud_data', JSON.stringify(newCloudData));
+        }
       } catch (error) {
         console.error('Error saving registered users to localStorage:', error);
       }
@@ -278,6 +372,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
       
       console.log("Registered mock users:", window.registeredMockUsers);
+      console.log("Stored passwords for users:", Object.keys(window.registeredUserPasswords).length);
       
       return true;
     } catch (error) {
@@ -316,12 +411,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       // First check the fixed admin account
       const adminUser = mockUsers[0]; // First user is our fixed admin
-      if (email === adminUser.email && password === 'admin123') {
+      if (email === adminUser.email && password === MOCK_ADMIN_PASSWORD) {
+        // Kiểm tra xem có ảnh đại diện được lưu không
+        const savedAvatar = SyncService.getUserAvatar(adminUser.id);
+        const userWithAvatar = {
+          ...adminUser,
+          avatar: savedAvatar || adminUser.avatar
+        };
+        
         setAuthState({
           isAuthenticated: true,
-          user: adminUser,
+          user: userWithAvatar,
           isLoading: false
         });
+        
+        // Lưu ảnh đại diện lên cloud
+        if (userWithAvatar.avatar) {
+          SyncService.saveUserAvatar(adminUser.id, userWithAvatar.avatar);
+        }
+        
         toast({
           title: "Đăng nhập thành công",
           description: `Xin chào ${adminUser.displayName}!`,
@@ -332,11 +440,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Then check other mock users
       const mockUser = mockUsers.slice(1).find(user => user.email === email);
       if (mockUser && password === MOCK_PASSWORD) {
+        // Kiểm tra xem có ảnh đại diện được lưu không
+        const savedAvatar = SyncService.getUserAvatar(mockUser.id);
+        const userWithAvatar = {
+          ...mockUser,
+          avatar: savedAvatar || mockUser.avatar
+        };
+        
         setAuthState({
           isAuthenticated: true,
-          user: mockUser,
+          user: userWithAvatar,
           isLoading: false
         });
+        
+        // Lưu ảnh đại diện lên cloud
+        if (userWithAvatar.avatar) {
+          SyncService.saveUserAvatar(mockUser.id, userWithAvatar.avatar);
+        }
+        
         toast({
           title: "Đăng nhập thành công",
           description: `Xin chào ${mockUser.displayName}!`,
@@ -351,18 +472,65 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log('Found user:', registeredUser);
       
       if (registeredUser) {
-        // Trong môi trường phát triển, chỉ kiểm tra mật khẩu cho admin
-        // Cho người dùng đã đăng ký, luôn cho phép đăng nhập
-        setAuthState({
-          isAuthenticated: true,
-          user: registeredUser,
-          isLoading: false
-        });
-        toast({
-          title: "Đăng nhập thành công",
-          description: `Xin chào ${registeredUser.displayName}!`,
-        });
-        return true;
+        // Kiểm tra mật khẩu cho người dùng đã đăng ký
+        // Lấy mật khẩu đã lưu
+        const storedPassword = window.registeredUserPasswords?.[registeredUser.id];
+        
+        if (!storedPassword) {
+          console.warn('No password found for user:', registeredUser.id);
+          toast({
+            title: "Đăng nhập thất bại",
+            description: "Tài khoản không hợp lệ. Vui lòng kiểm tra lại thông tin đăng nhập.",
+            variant: "destructive"
+          });
+          return false;
+        }
+        
+        // So sánh mật khẩu
+        if (password === storedPassword) {
+          // Kiểm tra ảnh đại diện từ cloud
+          const savedAvatar = SyncService.getUserAvatar(registeredUser.id);
+          
+          // Sử dụng ảnh đại diện từ cloud nếu có, nếu không thì dùng ảnh hiện tại
+          const userWithAvatar = {
+            ...registeredUser,
+            avatar: savedAvatar || registeredUser.avatar
+          };
+          
+          // Cập nhật ảnh đại diện trong danh sách người dùng đã đăng ký
+          if (savedAvatar && registeredUser.avatar !== savedAvatar) {
+            const userIndex = window.registeredMockUsers.findIndex(u => u.id === registeredUser.id);
+            if (userIndex >= 0) {
+              window.registeredMockUsers[userIndex].avatar = savedAvatar;
+              localStorage.setItem('registeredMockUsers', JSON.stringify(window.registeredMockUsers));
+            }
+          }
+          
+          setAuthState({
+            isAuthenticated: true,
+            user: userWithAvatar,
+            isLoading: false
+          });
+          
+          // Đảm bảo ảnh đại diện được lưu lên cloud
+          if (userWithAvatar.avatar) {
+            SyncService.saveUserAvatar(registeredUser.id, userWithAvatar.avatar);
+          }
+          
+          toast({
+            title: "Đăng nhập thành công",
+            description: `Xin chào ${registeredUser.displayName}!`,
+          });
+          return true;
+        } else {
+          console.warn('Password mismatch for user:', registeredUser.id);
+          toast({
+            title: "Đăng nhập thất bại",
+            description: "Mật khẩu không đúng. Vui lòng thử lại.",
+            variant: "destructive"
+          });
+          return false;
+        }
       }
       
       toast({
