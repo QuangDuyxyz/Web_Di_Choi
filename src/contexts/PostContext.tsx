@@ -1,10 +1,11 @@
-import { createContext, useState, useContext, useEffect, ReactNode } from 'react';
+import { createContext, useState, useContext, useEffect, ReactNode, useCallback } from 'react';
 import { Post, PostComment, PostAttachment, PostWithComments } from '@/types/post';
 import { v4 as uuidv4 } from 'uuid';
 import { User } from '@/types';
 import { useAuth } from './AuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { SyncService } from '@/lib/syncService';
+import { CloudSyncService } from '@/services/cloudSyncService';
 
 interface PostContextType {
   posts: PostWithComments[];
@@ -34,14 +35,29 @@ export const PostProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // Khởi tạo dữ liệu từ cloud hoặc localStorage
-  useEffect(() => {
+  // Lấy dữ liệu từ cloud thực sự (CloudSyncService) hoặc từ local
+  const loadPosts = useCallback(async () => {
     try {
-      // Ưu tiên lấy dữ liệu từ cloud trước
+      setIsLoading(true);
+      
+      // Ưu tiên lấy dữ liệu từ CloudSyncService (đồng bộ giữa các thiết bị)
+      const realCloudData = CloudSyncService.loadFromCloud();
+      
+      if (realCloudData && realCloudData.posts && realCloudData.posts.length > 0) {
+        console.log('Loaded posts from real cloud sync:', realCloudData.posts.length);
+        setPosts(realCloudData.posts as PostWithComments[]);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Nếu không có từ CloudSyncService, thử SyncService
       const cloudData = SyncService.loadFromCloud();
       if (cloudData && cloudData.posts && cloudData.posts.length > 0) {
         setPosts(cloudData.posts as PostWithComments[]);
-        console.log('Loaded posts from cloud sync:', cloudData.posts.length);
+        console.log('Loaded posts from local cloud sync:', cloudData.posts.length);
+        
+        // Đồng bộ lên CloudSyncService
+        await CloudSyncService.saveToCloud({ posts: cloudData.posts });
         setIsLoading(false);
         return;
       }
@@ -53,8 +69,9 @@ export const PostProvider = ({ children }: { children: ReactNode }) => {
         setPosts(parsedPosts);
         console.log('Loaded posts from localStorage:', parsedPosts.length);
         
-        // Đồng bộ lên cloud
+        // Đồng bộ lên cả hai cloud
         SyncService.saveToCloud({ posts: parsedPosts });
+        await CloudSyncService.saveToCloud({ posts: parsedPosts });
       }
       setIsLoading(false);
     } catch (error) {
@@ -62,6 +79,50 @@ export const PostProvider = ({ children }: { children: ReactNode }) => {
       setIsLoading(false);
     }
   }, []);
+  
+  // Khởi tạo dữ liệu khi component mount
+  useEffect(() => {
+    loadPosts();
+  }, [loadPosts]);
+  
+  // Lắng nghe sự kiện đồng bộ dữ liệu từ các thiết bị/tab khác
+  useEffect(() => {
+    const handleDataSync = (event: CustomEvent) => {
+      console.log('Received data sync event:', event.detail);
+      
+      if (event.detail?.data?.posts) {
+        // Lấy dữ liệu posts từ sự kiện
+        const syncedPosts = event.detail.data.posts;
+        
+        // Cập nhật state nếu có dữ liệu mới
+        if (syncedPosts && syncedPosts.length > 0) {
+          setPosts(prevPosts => {
+            // Kết hợp dữ liệu mới và dữ liệu hiện tại
+            const mergedPosts = CloudSyncService.mergeData<PostWithComments>(
+              prevPosts, 
+              syncedPosts as PostWithComments[],
+              'id'
+            );
+            return mergedPosts;
+          });
+        }
+      }
+    };
+    
+    // Đăng ký lắng nghe sự kiện đồng bộ
+    window.addEventListener('friendverse_data_sync', handleDataSync as EventListener);
+    
+    // Thêm lắng nghe cho sự kiện yêu cầu đồng bộ
+    const handleRequestSync = () => {
+      loadPosts();
+    };
+    window.addEventListener('friendverse_request_sync', handleRequestSync);
+    
+    return () => {
+      window.removeEventListener('friendverse_data_sync', handleDataSync as EventListener);
+      window.removeEventListener('friendverse_request_sync', handleRequestSync);
+    };
+  }, [loadPosts]);
 
   // Lưu dữ liệu posts vào localStorage và cloud khi có thay đổi
   useEffect(() => {
@@ -70,10 +131,11 @@ export const PostProvider = ({ children }: { children: ReactNode }) => {
         // Lưu vào localStorage
         localStorage.setItem('posts', JSON.stringify(posts));
         
-        // Đồng bộ lên cloud
+        // Đồng bộ lên cả hai cloud
         SyncService.saveToCloud({ posts });
+        CloudSyncService.saveToCloud({ posts });
         
-        console.log('Saved posts to storage and cloud:', posts.length);
+        console.log('Saved posts to storage and clouds:', posts.length);
       } catch (error) {
         console.error('Error saving posts:', error);
       }
@@ -107,10 +169,11 @@ export const PostProvider = ({ children }: { children: ReactNode }) => {
 
       setPosts(prevPosts => [newPost, ...prevPosts]);
       
-      // Đồng bộ posts lên cloud ngay lập tức
+      // Đồng bộ posts lên cả hai cloud ngay lập tức
       const updatedPosts = [newPost, ...posts];
       localStorage.setItem('posts', JSON.stringify(updatedPosts));
       SyncService.saveToCloud({ posts: updatedPosts });
+      CloudSyncService.saveToCloud({ posts: updatedPosts });
 
       toast({
         title: "Thành công",
@@ -134,9 +197,10 @@ export const PostProvider = ({ children }: { children: ReactNode }) => {
       const updatedPosts = posts.filter(post => post.id !== postId);
       setPosts(updatedPosts);
       
-      // Đồng bộ posts mới lên cloud ngay lập tức
+      // Đồng bộ posts mới lên cả hai cloud ngay lập tức
       localStorage.setItem('posts', JSON.stringify(updatedPosts));
       SyncService.saveToCloud({ posts: updatedPosts });
+      CloudSyncService.saveToCloud({ posts: updatedPosts });
       
       toast({
         title: "Thành công",

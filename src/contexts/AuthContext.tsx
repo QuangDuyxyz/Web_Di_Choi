@@ -1,9 +1,10 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { User, AuthState, RegisterFormData, UserRole } from '../types';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { mockUsers, MOCK_PASSWORD, MOCK_ADMIN_PASSWORD } from '@/data/mockData';
 import { SyncService } from '@/lib/syncService';
+import { CloudSyncService } from '@/services/cloudSyncService';
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<boolean>;
@@ -40,20 +41,43 @@ declare global {
 }
 
 try {
-  // Khôi phục danh sách người dùng
-  const savedUsers = localStorage.getItem('registeredMockUsers');
-  window.registeredMockUsers = savedUsers ? JSON.parse(savedUsers) : [];
-  
-  // Khôi phục mật khẩu của người dùng
-  const savedPasswords = localStorage.getItem('registeredUserPasswords');
-  window.registeredUserPasswords = savedPasswords ? JSON.parse(savedPasswords) : {};
-  
-  console.log('Loaded users and passwords:', {
-    users: window.registeredMockUsers.length,
-    passwords: Object.keys(window.registeredUserPasswords || {}).length
-  });
+  // Ưu tiên kiểm tra xem có dữ liệu từ CloudSyncService không
+  const cloudData = CloudSyncService.loadFromCloud();
+  if (cloudData && cloudData.users && cloudData.users.length > 0 && cloudData.passwords) {
+    window.registeredMockUsers = cloudData.users;
+    window.registeredUserPasswords = cloudData.passwords;
+    
+    // Lưu vào localStorage để sử dụng offline
+    localStorage.setItem('registeredMockUsers', JSON.stringify(cloudData.users));
+    localStorage.setItem('registeredUserPasswords', JSON.stringify(cloudData.passwords));
+    
+    console.log('Loaded users and passwords from CloudSync:', {
+      users: window.registeredMockUsers.length,
+      passwords: Object.keys(window.registeredUserPasswords || {}).length
+    });
+  } else {
+    // Nếu không có dữ liệu từ CloudSyncService, thử từ localStorage
+    const savedUsers = localStorage.getItem('registeredMockUsers');
+    window.registeredMockUsers = savedUsers ? JSON.parse(savedUsers) : [];
+    
+    const savedPasswords = localStorage.getItem('registeredUserPasswords');
+    window.registeredUserPasswords = savedPasswords ? JSON.parse(savedPasswords) : {};
+    
+    // Đồng bộ lên Cloud nếu có dữ liệu
+    if (window.registeredMockUsers.length > 0) {
+      CloudSyncService.saveToCloud({
+        users: window.registeredMockUsers,
+        passwords: window.registeredUserPasswords
+      });
+    }
+    
+    console.log('Loaded users and passwords from localStorage:', {
+      users: window.registeredMockUsers.length,
+      passwords: Object.keys(window.registeredUserPasswords || {}).length
+    });
+  }
 } catch (error) {
-  console.error('Error loading registered users from localStorage:', error);
+  console.error('Error loading registered users:', error);
   window.registeredMockUsers = [];
   window.registeredUserPasswords = {};
 }
@@ -128,6 +152,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   
   const [authState, setAuthState] = useState<AuthState>(initAuthState());
   const { toast } = useToast();
+  
+  // Lắng nghe sự kiện đồng bộ dữ liệu người dùng từ các tab/thiết bị khác
+  useEffect(() => {
+    const handleDataSync = (event: CustomEvent) => {
+      if (event.detail?.data?.users) {
+        // Cập nhật danh sách người dùng mới từ sự kiện
+        const syncedUsers = event.detail.data.users;
+        const syncedPasswords = event.detail.data.passwords || {};
+        
+        if (syncedUsers && syncedUsers.length > 0) {
+          // Cập nhật danh sách người dùng đồng bộ
+          window.registeredMockUsers = syncedUsers;
+          window.registeredUserPasswords = syncedPasswords;
+          
+          // Lưu vào localStorage
+          localStorage.setItem('registeredMockUsers', JSON.stringify(syncedUsers));
+          localStorage.setItem('registeredUserPasswords', JSON.stringify(syncedPasswords));
+          
+          console.log('Updated users from sync event:', {
+            users: syncedUsers.length,
+            passwords: Object.keys(syncedPasswords).length
+          });
+        }
+      }
+    };
+    
+    window.addEventListener('friendverse_data_sync', handleDataSync as EventListener);
+    
+    return () => {
+      window.removeEventListener('friendverse_data_sync', handleDataSync as EventListener);
+    };
+  }, []);
   
   // Lưu trạng thái xác thực vào localStorage khi thay đổi
   useEffect(() => {
@@ -326,8 +382,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       // Add to local storage of registered users
       window.registeredMockUsers.push(newUser);
-      
-      // Lưu vào localStorage để dữ liệu không bị mất khi làm mới trang
+            // Lưu vào localStorage để dữ liệu không bị mất khi làm mới trang
       try {
         // Lưu danh sách người dùng
         localStorage.setItem('registeredMockUsers', JSON.stringify(window.registeredMockUsers));
@@ -335,26 +390,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Lưu danh sách mật khẩu
         localStorage.setItem('registeredUserPasswords', JSON.stringify(window.registeredUserPasswords));
         
-        // Thêm dữ liệu vào cloud storage nếu có
-        const cloudData = localStorage.getItem('friendverse_cloud_data');
-        if (cloudData) {
-          try {
-            const parsedData = JSON.parse(cloudData);
-            parsedData.users = window.registeredMockUsers;
-            parsedData.passwords = window.registeredUserPasswords;
-            localStorage.setItem('friendverse_cloud_data', JSON.stringify(parsedData));
-          } catch (e) {
-            console.error('Error updating cloud data:', e);
-          }
-        } else {
-          // Tạo mới nếu chưa có
-          const newCloudData = {
-            users: window.registeredMockUsers,
-            passwords: window.registeredUserPasswords,
-            lastUpdated: new Date().toISOString()
-          };
-          localStorage.setItem('friendverse_cloud_data', JSON.stringify(newCloudData));
-        }
+        // Đồng bộ với các thiết bị khác qua CloudSyncService
+        CloudSyncService.saveToCloud({
+          users: window.registeredMockUsers,
+          passwords: window.registeredUserPasswords
+        });
+        
+        // Đồng bộ với local SyncService
+        SyncService.saveToCloud({
+          users: window.registeredMockUsers,
+          passwords: window.registeredUserPasswords
+        });
       } catch (error) {
         console.error('Error saving registered users to localStorage:', error);
       }
