@@ -9,6 +9,7 @@ import { EventsProvider } from "@/contexts/EventsContext";
 import { BirthdayProvider } from "@/contexts/BirthdayContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { PostProvider } from "@/contexts/PostContext";
+import { DataSyncProvider } from "@/contexts/DataSyncContext";
 
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -19,6 +20,7 @@ import AddEvent from "./pages/AddEvent";
 import NotFound from "./pages/NotFound";
 import Register from "./pages/Register";
 import Chat from "./pages/Chat";
+import DataSync from "./pages/DataSync";
 
 const queryClient = new QueryClient();
 
@@ -32,7 +34,8 @@ const App = () => (
           <BirthdayProvider>
             <ChatProvider>
               <PostProvider>
-                <BrowserRouter>
+                <DataSyncProvider>
+                  <BrowserRouter>
                 <Routes>
                   {/* Trang chủ công khai, tất cả đều có thể truy cập */}
                   <Route path="/" element={<Index />} />
@@ -55,8 +58,10 @@ const App = () => (
                   
                   {/* Trang không tìm thấy */}
                   <Route path="*" element={<NotFound />} />
+                  <Route path="/data-sync" element={<DataSync />} />
                 </Routes>
                 </BrowserRouter>
+                </DataSyncProvider>
               </PostProvider>
             </ChatProvider>
           </BirthdayProvider>

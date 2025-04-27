@@ -4,7 +4,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { mockUsers, MOCK_PASSWORD, MOCK_ADMIN_PASSWORD } from '@/data/mockData';
 import { SyncService } from '@/lib/syncService';
-import { CloudSyncService } from '@/services/cloudSyncService';
+import { FirebaseService } from '@/services/firebaseService';
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<boolean>;
@@ -40,42 +40,67 @@ declare global {
   }
 }
 
-try {
-  // Ưu tiên kiểm tra xem có dữ liệu từ CloudSyncService không
-  const cloudData = CloudSyncService.loadFromCloud();
-  if (cloudData && cloudData.users && cloudData.users.length > 0 && cloudData.passwords) {
-    window.registeredMockUsers = cloudData.users;
-    window.registeredUserPasswords = cloudData.passwords;
+// Đọc dữ liệu từ Firebase trước
+const initializeUsersFromFirebase = async () => {
+  try {
+    // Lấy dữ liệu từ Firebase
+    const firebaseData = await FirebaseService.getData();
     
-    // Lưu vào localStorage để sử dụng offline
-    localStorage.setItem('registeredMockUsers', JSON.stringify(cloudData.users));
-    localStorage.setItem('registeredUserPasswords', JSON.stringify(cloudData.passwords));
+    if (firebaseData && firebaseData.users && firebaseData.users.length > 0 && firebaseData.passwords) {
+      window.registeredMockUsers = firebaseData.users;
+      window.registeredUserPasswords = firebaseData.passwords;
+      
+      // Lưu vào localStorage để sử dụng offline
+      localStorage.setItem('registeredMockUsers', JSON.stringify(firebaseData.users));
+      localStorage.setItem('registeredUserPasswords', JSON.stringify(firebaseData.passwords));
+      
+      console.log('Loaded users and passwords from Firebase:', {
+        users: window.registeredMockUsers.length,
+        passwords: Object.keys(window.registeredUserPasswords || {}).length
+      });
+    } else {
+      // Nếu không có dữ liệu từ Firebase, thử từ localStorage
+      const savedUsers = localStorage.getItem('registeredMockUsers');
+      window.registeredMockUsers = savedUsers ? JSON.parse(savedUsers) : [];
+      
+      const savedPasswords = localStorage.getItem('registeredUserPasswords');
+      window.registeredUserPasswords = savedPasswords ? JSON.parse(savedPasswords) : {};
+      
+      // Đồng bộ lên Firebase nếu có dữ liệu
+      if (window.registeredMockUsers.length > 0) {
+        await FirebaseService.saveData({
+          users: window.registeredMockUsers,
+          passwords: window.registeredUserPasswords
+        });
+      }
+      
+      console.log('Loaded users and passwords from localStorage:', {
+        users: window.registeredMockUsers.length,
+        passwords: Object.keys(window.registeredUserPasswords || {}).length
+      });
+    }
+  } catch (error) {
+    console.error('Error initializing users:', error);
     
-    console.log('Loaded users and passwords from CloudSync:', {
-      users: window.registeredMockUsers.length,
-      passwords: Object.keys(window.registeredUserPasswords || {}).length
-    });
-  } else {
-    // Nếu không có dữ liệu từ CloudSyncService, thử từ localStorage
+    // Fallback to localStorage
     const savedUsers = localStorage.getItem('registeredMockUsers');
     window.registeredMockUsers = savedUsers ? JSON.parse(savedUsers) : [];
     
     const savedPasswords = localStorage.getItem('registeredUserPasswords');
     window.registeredUserPasswords = savedPasswords ? JSON.parse(savedPasswords) : {};
-    
-    // Đồng bộ lên Cloud nếu có dữ liệu
-    if (window.registeredMockUsers.length > 0) {
-      CloudSyncService.saveToCloud({
-        users: window.registeredMockUsers,
-        passwords: window.registeredUserPasswords
-      });
-    }
-    
-    console.log('Loaded users and passwords from localStorage:', {
-      users: window.registeredMockUsers.length,
-      passwords: Object.keys(window.registeredUserPasswords || {}).length
-    });
   }
+};
+
+try {
+  // Khởi tạo dữ liệu tạm thời từ localStorage
+  const savedUsers = localStorage.getItem('registeredMockUsers');
+  window.registeredMockUsers = savedUsers ? JSON.parse(savedUsers) : [];
+  
+  const savedPasswords = localStorage.getItem('registeredUserPasswords');
+  window.registeredUserPasswords = savedPasswords ? JSON.parse(savedPasswords) : {};
+  
+  // Sau đó khởi tạo từ Firebase (đồng bộ)
+  initializeUsersFromFirebase();
 } catch (error) {
   console.error('Error loading registered users:', error);
   window.registeredMockUsers = [];
@@ -126,18 +151,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               };
             }
             
-            // Kiểm tra và khôi phục ảnh đại diện từ cloud nếu có
-            const savedAvatar = SyncService.getUserAvatar(userId);
-            if (savedAvatar && parsedState.user) {
-              parsedState.user.avatar = savedAvatar;
-              console.log('Restored avatar from cloud for user:', userId);
-            }
+            // Kiểm tra và khôi phục ảnh đại diện từ Firebase nếu có
+            FirebaseService.getData().then(data => {
+              if (data && data.userAvatars && parsedState.user) {
+                const avatarFromFirebase = data.userAvatars[userId];
+                if (avatarFromFirebase) {
+                  parsedState.user.avatar = avatarFromFirebase;
+                  console.log('Restored avatar from Firebase for user:', userId);
+                  
+                  // Cập nhật state nếu người dùng đang đăng nhập
+                  if (authState.isAuthenticated && authState.user && authState.user.id === userId) {
+                    setAuthState(prev => ({
+                      ...prev,
+                      user: { ...prev.user!, avatar: avatarFromFirebase }
+                    }));
+                  }
+                }
+              }
+            }).catch(error => {
+              console.error('Error getting avatar from Firebase:', error);
+            });
+            
+            return {
+              ...parsedState,
+              isLoading: false // Đã load xong
+            };
           }
-          
-          return {
-            ...parsedState,
-            isLoading: false // Đã load xong
-          };
         }
       }
     } catch (error) {
@@ -153,37 +192,52 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [authState, setAuthState] = useState<AuthState>(initAuthState());
   const { toast } = useToast();
   
-  // Lắng nghe sự kiện đồng bộ dữ liệu người dùng từ các tab/thiết bị khác
+  // Sử dụng Firebase lắng nghe thay đổi để đồng bộ dữ liệu người dùng giữa các thiết bị
   useEffect(() => {
-    const handleDataSync = (event: CustomEvent) => {
-      if (event.detail?.data?.users) {
-        // Cập nhật danh sách người dùng mới từ sự kiện
-        const syncedUsers = event.detail.data.users;
-        const syncedPasswords = event.detail.data.passwords || {};
+    // Thiết lập lắng nghe thay đổi dữ liệu từ Firebase
+    const unsubscribe = FirebaseService.subscribe((data) => {
+      if (data.users && data.users.length > 0) {
+        // Cập nhật danh sách người dùng mới từ Firebase
+        const syncedUsers = data.users;
+        const syncedPasswords = data.passwords || {};
         
-        if (syncedUsers && syncedUsers.length > 0) {
-          // Cập nhật danh sách người dùng đồng bộ
-          window.registeredMockUsers = syncedUsers;
-          window.registeredUserPasswords = syncedPasswords;
-          
-          // Lưu vào localStorage
-          localStorage.setItem('registeredMockUsers', JSON.stringify(syncedUsers));
-          localStorage.setItem('registeredUserPasswords', JSON.stringify(syncedPasswords));
-          
-          console.log('Updated users from sync event:', {
-            users: syncedUsers.length,
-            passwords: Object.keys(syncedPasswords).length
-          });
+        // Kết hợp với dữ liệu hiện tại
+        const mergedUsers = FirebaseService.mergeArrays(window.registeredMockUsers, syncedUsers);
+        
+        // Cập nhật danh sách người dùng đồng bộ
+        window.registeredMockUsers = mergedUsers;
+        window.registeredUserPasswords = { ...window.registeredUserPasswords, ...syncedPasswords };
+        
+        // Lưu vào localStorage
+        localStorage.setItem('registeredMockUsers', JSON.stringify(mergedUsers));
+        localStorage.setItem('registeredUserPasswords', JSON.stringify(window.registeredUserPasswords));
+        
+        console.log('Updated users from Firebase:', {
+          users: mergedUsers.length,
+          passwords: Object.keys(window.registeredUserPasswords).length
+        });
+      }
+      
+      // Cập nhật ảnh đại diện nếu có
+      if (data.userAvatars && authState.user) {
+        const userId = authState.user.id;
+        const newAvatar = data.userAvatars[userId];
+        
+        if (newAvatar && newAvatar !== authState.user.avatar) {
+          // Cập nhật ảnh đại diện cho người dùng đang đăng nhập
+          setAuthState(prev => ({
+            ...prev,
+            user: prev.user ? { ...prev.user, avatar: newAvatar } : null
+          }));
         }
       }
-    };
+    });
     
-    window.addEventListener('friendverse_data_sync', handleDataSync as EventListener);
-    
+    // Dọn dẹp khi component unmount
     return () => {
-      window.removeEventListener('friendverse_data_sync', handleDataSync as EventListener);
+      unsubscribe();
     };
-  }, []);
+  }, [authState.user]);
   
   // Lưu trạng thái xác thực vào localStorage khi thay đổi
   useEffect(() => {
@@ -203,7 +257,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         
         // Lưu ảnh đại diện của người dùng vào cloud khi họ đăng nhập
         if (authState.isAuthenticated && authState.user && authState.user.avatar) {
-          SyncService.saveUserAvatar(authState.user.id, authState.user.avatar);
+          FirebaseService.saveData({
+            userAvatars: { [authState.user.id]: authState.user.avatar }
+          });
         }
       } catch (error) {
         console.error('Error saving auth state to localStorage:', error);
@@ -377,8 +433,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Lưu mật khẩu riêng biệt
       window.registeredUserPasswords[newId] = data.password;
       
-      // Lưu ảnh đại diện vào cloud
-      SyncService.saveUserAvatar(newId, newUser.avatar);
+      // Lưu ảnh đại diện vào Firebase
+      FirebaseService.saveData({
+        userAvatars: { [newId]: newUser.avatar }
+      });
       
       // Add to local storage of registered users
       window.registeredMockUsers.push(newUser);
@@ -390,14 +448,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Lưu danh sách mật khẩu
         localStorage.setItem('registeredUserPasswords', JSON.stringify(window.registeredUserPasswords));
         
-        // Đồng bộ với các thiết bị khác qua CloudSyncService
-        CloudSyncService.saveToCloud({
-          users: window.registeredMockUsers,
-          passwords: window.registeredUserPasswords
-        });
-        
-        // Đồng bộ với local SyncService
-        SyncService.saveToCloud({
+        // Đồng bộ với các thiết bị khác qua Firebase
+        FirebaseService.saveData({
           users: window.registeredMockUsers,
           passwords: window.registeredUserPasswords
         });
@@ -459,7 +511,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const adminUser = mockUsers[0]; // First user is our fixed admin
       if (email === adminUser.email && password === MOCK_ADMIN_PASSWORD) {
         // Kiểm tra xem có ảnh đại diện được lưu không
-        const savedAvatar = SyncService.getUserAvatar(adminUser.id);
+        const savedAvatar = SyncService.getUserAvatar(adminUser.id); // Fallback to SyncService
         const userWithAvatar = {
           ...adminUser,
           avatar: savedAvatar || adminUser.avatar
@@ -471,9 +523,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           isLoading: false
         });
         
-        // Lưu ảnh đại diện lên cloud
+        // Lưu ảnh đại diện lên Firebase
         if (userWithAvatar.avatar) {
-          SyncService.saveUserAvatar(adminUser.id, userWithAvatar.avatar);
+          FirebaseService.saveData({
+            userAvatars: { [adminUser.id]: userWithAvatar.avatar }
+          });
         }
         
         toast({
@@ -487,7 +541,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const mockUser = mockUsers.slice(1).find(user => user.email === email);
       if (mockUser && password === MOCK_PASSWORD) {
         // Kiểm tra xem có ảnh đại diện được lưu không
-        const savedAvatar = SyncService.getUserAvatar(mockUser.id);
+        const savedAvatar = SyncService.getUserAvatar(mockUser.id); // Fallback to SyncService
         const userWithAvatar = {
           ...mockUser,
           avatar: savedAvatar || mockUser.avatar
@@ -499,9 +553,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           isLoading: false
         });
         
-        // Lưu ảnh đại diện lên cloud
+        // Lưu ảnh đại diện lên Firebase
         if (userWithAvatar.avatar) {
-          SyncService.saveUserAvatar(mockUser.id, userWithAvatar.avatar);
+          FirebaseService.saveData({
+            userAvatars: { [mockUser.id]: userWithAvatar.avatar }
+          });
         }
         
         toast({
@@ -534,10 +590,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         
         // So sánh mật khẩu
         if (password === storedPassword) {
-          // Kiểm tra ảnh đại diện từ cloud
+          // Kiểm tra ảnh đại diện từ Firebase (fallback to SyncService)
           const savedAvatar = SyncService.getUserAvatar(registeredUser.id);
           
-          // Sử dụng ảnh đại diện từ cloud nếu có, nếu không thì dùng ảnh hiện tại
+          // Sử dụng ảnh đại diện từ Firebase nếu có, nếu không thì dùng ảnh hiện tại
           const userWithAvatar = {
             ...registeredUser,
             avatar: savedAvatar || registeredUser.avatar
@@ -558,9 +614,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             isLoading: false
           });
           
-          // Đảm bảo ảnh đại diện được lưu lên cloud
+          // Đảm bảo ảnh đại diện được lưu lên Firebase
           if (userWithAvatar.avatar) {
-            SyncService.saveUserAvatar(registeredUser.id, userWithAvatar.avatar);
+            FirebaseService.saveData({
+              userAvatars: { [registeredUser.id]: userWithAvatar.avatar }
+            });
+          }
           }
           
           toast({
