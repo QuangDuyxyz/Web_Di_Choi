@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,9 +12,11 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // Không cần kiểm tra isAuthenticated ở đây nữa vì PublicOnlyRoute đã xử lý việc chuyển hướng
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +38,18 @@ const Login = () => {
           title: "Đăng nhập thành công",
           description: "Chào mừng trở lại FriendVerse!"
         });
-        navigate('/');
+        
+        // Sử dụng sessionStorage để đánh dấu đã đăng nhập thành công
+        // và tạo một cơ chế anti-redirect-loop
+        sessionStorage.setItem('loginSuccess', 'true');
+        sessionStorage.setItem('loginTime', Date.now().toString());
+        
+        setTimeout(() => {
+          console.log('Login successful, redirecting to timeline');
+          // Sử dụng navigate để chuyển đến trang timeline
+          // Vì chúng ta đã có PublicOnlyRoute, sẽ không có chuyện quay lại trang login
+          navigate('/timeline', { replace: true });
+        }, 1000);
       } else {
         toast({
           title: "Lỗi đăng nhập",

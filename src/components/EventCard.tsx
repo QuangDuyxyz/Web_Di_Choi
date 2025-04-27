@@ -25,13 +25,16 @@ import { Event, User } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEvents } from '@/contexts/EventsContext';
 import { mockUsers } from '@/data/mockData';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import {
   formatDate,
   getRelativeTime,
   calculateTimeLeft,
   isToday
 } from '@/utils/dateUtils';
-import { Edit, Trash2, Heart, MessageSquare, MoreHorizontal } from 'lucide-react';
+import { Edit, Trash2, Heart, MessageSquare, MoreHorizontal, Users } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 interface EventCardProps {
   event: Event;
@@ -40,14 +43,14 @@ interface EventCardProps {
 
 export const EventCard = ({ event, onEdit }: EventCardProps) => {
   const { isAdmin, user } = useAuth();
-  const { updateEvent, deleteEvent, addWish } = useEvents();
+  const { updateEvent, deleteEvent, addWish, toggleLike, isLikedByUser } = useEvents();
   const [timeLeft, setTimeLeft] = useState(calculateTimeLeft(event.date));
   const [showCountdown, setShowCountdown] = useState(true);
-  const [liked, setLiked] = useState(false);
   const [showWishForm, setShowWishForm] = useState(false);
   const [wishContent, setWishContent] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [creator, setCreator] = useState<User | null>(null);
+  const [isLikeAnimating, setIsLikeAnimating] = useState(false);
 
   // Refresh countdown every second
   useEffect(() => {
@@ -60,14 +63,30 @@ export const EventCard = ({ event, onEdit }: EventCardProps) => {
 
   // Find the creator of the event
   useEffect(() => {
-    const eventCreator = mockUsers.find(u => u.id === event.createdBy);
+    // Tìm trong mockUsers
+    let eventCreator = mockUsers.find(u => u.id === event.createdBy);
+    
+    // Nếu không tìm thấy, kiểm tra trong registeredMockUsers
+    if (!eventCreator && window.registeredMockUsers) {
+      eventCreator = window.registeredMockUsers.find(u => u.id === event.createdBy);
+    }
+    
     if (eventCreator) {
       setCreator(eventCreator);
     }
   }, [event]);
 
   const handleLike = () => {
-    setLiked(!liked);
+    if (!user) return;
+    
+    // Kích hoạt hiệu ứng animation
+    setIsLikeAnimating(true);
+    
+    // Gọi hàm toggleLike từ context
+    toggleLike(event.id, user.id);
+    
+    // Kết thúc animation sau 1 giây
+    setTimeout(() => setIsLikeAnimating(false), 1000);
   };
 
   const handleSubmitWish = () => {
@@ -79,12 +98,41 @@ export const EventCard = ({ event, onEdit }: EventCardProps) => {
   };
 
   const handleDelete = () => {
-    deleteEvent(event.id);
-    setConfirmDelete(false);
+    try {
+      // Xóa sự kiện
+      deleteEvent(event.id);
+      
+      // Kiểm tra xem dữ liệu đã được lưu vào localStorage chưa
+      setTimeout(() => {
+        const savedEvents = localStorage.getItem('friendverse-events');
+        if (savedEvents) {
+          try {
+            const parsedEvents = JSON.parse(savedEvents);
+            const eventStillExists = parsedEvents.some((e: Event) => e.id === event.id);
+            
+            if (eventStillExists) {
+              console.error('Sự kiện vẫn còn tồn tại sau khi xóa, thực hiện xóa lại');
+              // Nếu sự kiện vẫn còn, xóa trực tiếp từ localStorage
+              const updatedEvents = parsedEvents.filter((e: Event) => e.id !== event.id);
+              localStorage.setItem('friendverse-events', JSON.stringify(updatedEvents));
+              console.log('Đã xóa sự kiện trực tiếp từ localStorage');
+            } else {
+              console.log('Sự kiện đã được xóa thành công');
+            }
+          } catch (error) {
+            console.error('Lỗi khi phân tích dữ liệu localStorage:', error);
+          }
+        }
+      }, 500);
+      
+      setConfirmDelete(false);
+    } catch (error) {
+      console.error('Lỗi khi xóa sự kiện:', error);
+    }
   };
 
   const getCardClass = () => {
-    let classes = "border rounded-xl overflow-hidden transition-all";
+    let classes = "border rounded-xl overflow-hidden transition-all duration-300 hover:shadow-lg transform hover:-translate-y-1";
     
     if (event.eventType === 'birthday' && isToday(event.date)) {
       classes += " bg-gradient-to-br from-friendverse-pink to-friendverse-purple";
@@ -92,14 +140,27 @@ export const EventCard = ({ event, onEdit }: EventCardProps) => {
       classes += " bg-gradient-to-br from-friendverse-blue to-friendverse-green opacity-90";
     } else if (event.eventType === 'anniversary') {
       classes += " bg-gradient-to-br from-friendverse-yellow to-friendverse-peach";
+    } else if (event.eventType === 'meeting') {
+      classes += " bg-gradient-to-br from-blue-400 to-purple-400";
     }
     
     return classes;
   };
 
+  // Kiểm tra xem người dùng hiện tại đã thích sự kiện này chưa
+  const userHasLiked = user ? isLikedByUser(event.id, user.id) : false;
+  
+  // Đếm số lượng like
+  const likeCount = event.likes?.length || 0;
+
   return (
-    <Card className={getCardClass()}>
-      <CardContent className="p-4">
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <Card className={getCardClass()}>
+        <CardContent className="p-4">
         <div className="flex justify-between items-start">
           <div className="flex items-center space-x-2">
             {event.emoji && (
@@ -158,6 +219,18 @@ export const EventCard = ({ event, onEdit }: EventCardProps) => {
 
         <p className="mt-3 text-sm">{event.description}</p>
 
+        {event.eventType && (
+          <Badge 
+            variant="outline" 
+            className="mt-3 capitalize bg-white/30 backdrop-blur-sm text-primary-foreground"
+          >
+            {event.eventType === 'birthday' ? 'Sinh nhật' :
+             event.eventType === 'anniversary' ? 'Kỷ niệm' :
+             event.eventType === 'trip' ? 'Du lịch' :
+             event.eventType === 'meeting' ? 'Gặp mặt' : 'Khác'}
+          </Badge>
+        )}
+
         {creator && (
           <div className="mt-4 flex items-center text-sm text-gray-600">
             <Avatar className="h-5 w-5 mr-1">
@@ -174,11 +247,36 @@ export const EventCard = ({ event, onEdit }: EventCardProps) => {
           <Button
             variant="ghost"
             size="sm"
-            className={`flex items-center ${liked ? 'text-rose-500' : ''}`}
+            className={cn(
+              "flex items-center transition-all relative overflow-hidden",
+              userHasLiked ? "text-rose-500 font-medium" : ""
+            )}
             onClick={handleLike}
           >
-            <Heart className="h-4 w-4 mr-1" />
-            <span>Thích</span>
+            <motion.div
+              animate={isLikeAnimating ? {
+                scale: [1, 1.5, 1],
+                rotate: [0, 15, -15, 0],
+              } : {}}
+              transition={{ duration: 0.5 }}
+              className="flex items-center"
+            >
+              <Heart 
+                className={cn(
+                  "h-4 w-4 mr-1", 
+                  userHasLiked ? "fill-rose-500" : ""
+                )} 
+              />
+            </motion.div>
+            <span>{userHasLiked ? "Đã thích" : "Thích"}</span>
+            {likeCount > 0 && (
+              <Badge 
+                variant="secondary" 
+                className="ml-1 h-5 min-w-5 flex items-center justify-center px-1"
+              >
+                {likeCount}
+              </Badge>
+            )}
           </Button>
 
           <Dialog open={showWishForm} onOpenChange={setShowWishForm}>
@@ -220,9 +318,27 @@ export const EventCard = ({ event, onEdit }: EventCardProps) => {
               </DialogHeader>
               <div className="space-y-4 max-h-[60vh] overflow-auto">
                 {event.wishes.map((wish) => {
-                  const wishUser = mockUsers.find(u => u.id === wish.userId);
+                  // Tìm kiếm người dùng từ nhiều nguồn: mockUsers, registeredMockUsers và user hiện tại
+                  let wishUser = mockUsers.find(u => u.id === wish.userId);
+                  
+                  // Nếu không tìm thấy trong mockUsers, tìm trong registeredMockUsers
+                  if (!wishUser && window.registeredMockUsers) {
+                    wishUser = window.registeredMockUsers.find(u => u.id === wish.userId);
+                  }
+                  
+                  // Nếu là người dùng hiện tại
+                  if (!wishUser && user && user.id === wish.userId) {
+                    wishUser = user;
+                  }
+                  
                   return (
-                    <div key={wish.id} className="p-3 bg-muted rounded-lg">
+                    <motion.div 
+                      key={wish.id} 
+                      className="p-3 bg-muted rounded-lg"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3 }}
+                    >
                       <div className="flex items-center gap-2 mb-1">
                         {wishUser && (
                           <Avatar className="h-6 w-6">
@@ -230,10 +346,12 @@ export const EventCard = ({ event, onEdit }: EventCardProps) => {
                             <AvatarFallback>{wishUser.displayName[0]}</AvatarFallback>
                           </Avatar>
                         )}
-                        <span className="font-medium">{wishUser?.displayName || 'Unknown'}</span>
+                        <span className="font-medium">
+                          {wishUser?.displayName || (wish.userId === user?.id ? user.displayName : 'Người dùng không xác định')}
+                        </span>
                       </div>
-                      <p>{wish.content}</p>
-                    </div>
+                      <p className="text-sm">{wish.content}</p>
+                    </motion.div>
                   );
                 })}
               </div>
@@ -261,5 +379,6 @@ export const EventCard = ({ event, onEdit }: EventCardProps) => {
         </DialogContent>
       </Dialog>
     </Card>
+    </motion.div>
   );
 };

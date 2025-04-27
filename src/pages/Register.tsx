@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,13 +18,52 @@ const Register = () => {
     birthdate: ''
   });
   const [isLoading, setIsLoading] = useState(false);
-  const { register } = useAuth();
+  const { register, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // Không cần kiểm tra isAuthenticated ở đây nữa vì PublicOnlyRoute đã xử lý việc chuyển hướng
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Kiểm tra dữ liệu trước khi đăng ký
+    if (!formData.email || !formData.password || !formData.username || !formData.displayName) {
+      toast({
+        title: "Thiếu thông tin",
+        description: "Vui lòng điền đầy đủ thông tin đăng ký",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Kiểm tra định dạng email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      toast({
+        title: "Email không hợp lệ",
+        description: "Vui lòng nhập đúng định dạng email",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Kiểm tra độ dài mật khẩu
+    if (formData.password.length < 6) {
+      toast({
+        title: "Mật khẩu quá ngắn",
+        description: "Mật khẩu phải có ít nhất 6 ký tự",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Hiển thị trạng thái đang xử lý
     setIsLoading(true);
+    toast({
+      title: "Đang xử lý",
+      description: "Đang đăng ký tài khoản..."
+    });
 
     try {
       const success = await register(formData);
@@ -33,9 +72,28 @@ const Register = () => {
           title: "Đăng ký thành công",
           description: "Chào mừng bạn đến với FriendVerse!"
         });
-        navigate('/');
+        
+        // Sử dụng sessionStorage để đánh dấu đã đăng ký thành công
+        // và tạo một cơ chế anti-redirect-loop
+        sessionStorage.setItem('registerSuccess', 'true');
+        sessionStorage.setItem('registerTime', Date.now().toString());
+        
+        setTimeout(() => {
+          console.log('Registration successful, redirecting to timeline');
+          // Sử dụng navigate để chuyển đến trang timeline
+          // Vì chúng ta đã có PublicOnlyRoute, sẽ không có chuyện quay lại trang đăng ký
+          navigate('/timeline', { replace: true });
+        }, 1500); // Giữ nguyên thời gian trễ để đảm bảo người dùng thấy thông báo
+      } else {
+        // Nếu register trả về false (ví dụ email đã tồn tại)
+        toast({
+          title: "Lỗi đăng ký",
+          description: "Email có thể đã được sử dụng hoặc có lỗi xảy ra. Vui lòng thử lại.",
+          variant: "destructive"
+        });
       }
     } catch (error) {
+      console.error('Lỗi khi đăng ký:', error);
       toast({
         title: "Lỗi đăng ký",
         description: "Có lỗi xảy ra khi đăng ký. Vui lòng thử lại.",

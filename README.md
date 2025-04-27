@@ -1,73 +1,105 @@
-# Welcome to your Lovable project
+# FriendVerse Chronicles Hub
 
-## Project info
+![FriendVerse Logo](https://api.dicebear.com/7.x/identicon/svg?seed=FriendVerse&backgroundColor=b6e3f4)
 
-**URL**: https://lovable.dev/projects/5425ce12-6b12-4a6c-966e-d1fec32ee139
+FriendVerse Chronicles Hub là một ứng dụng web interactiv được thiết kế để tạo và quản lý timeline cho nhóm bạn bè, ghi lại những kỷ niệm và sự kiện đáng nhớ cùng nhau. Ứng dụng cung cấp nhiều tính năng như đăng nhập/đăng ký, quản lý thành viên, chat nhóm, và tổ chức sự kiện, tạo nên một không gian kỷ niệm trực tuyến cho nhóm bạn thân.
 
-## How can I edit this code?
+## 📋 Tính năng chính
 
-There are several ways of editing your application.
+- **Hệ thống tài khoản**: Đăng ký, đăng nhập và quản lý hồ sơ cá nhân
+- **Timeline sự kiện**: Xem và quản lý các sự kiện theo dòng thời gian
+- **Quản lý thành viên**: Xem danh sách thành viên và thông tin chi tiết
+- **Chat nhóm**: Trò chuyện với các thành viên trong nhóm
+- **Thêm sự kiện** (Chỉ Admin): Tạo và quản lý các sự kiện mới
+- **Giao diện đáp ứng**: Hoạt động tốt trên cả máy tính và thiết bị di động
+- **Chế độ sáng/tối**: Tùy chỉnh giao diện theo sở thích
 
-**Use Lovable**
+## 🛠️ Công nghệ sử dụng
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/5425ce12-6b12-4a6c-966e-d1fec32ee139) and start prompting.
+- **Frontend**:
+  - React
+  - TypeScript
+  - Tailwind CSS
+  - shadcn/ui (UI components library)
+  - Framer Motion (Animations)
+  - React Router (Routing)
 
-Changes made via Lovable will be committed automatically to this repo.
+- **Bảo mật & Xác thực**:
+  - JSON Web Tokens (JWT)
+  - Bảo vệ route với React Router
+  - Mã hóa mật khẩu
 
-**Use your preferred IDE**
+- **Lưu trữ dữ liệu**:
+  - LocalStorage (cho mode phát triển)
+  - Supabase (cho production, nếu cần)
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## 🚀 Cài đặt và Sử dụng
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Yêu cầu hệ thống
 
-Follow these steps:
+- Node.js (v16+)
+- npm hoặc yarn
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Các bước cài đặt
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+1. Clone dự án:
+   ```bash
+   git clone https://github.com/QuangDuyxyz/Web_Di_Choi.git
+   cd Web_Di_Choi
+   ```
 
-# Step 3: Install the necessary dependencies.
-npm i
+2. Cài đặt các dependencies:
+   ```bash
+   npm install
+   # hoặc
+   yarn install
+   ```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+3. Chạy ứng dụng ở môi trường development:
+   ```bash
+   npm run dev
+   # hoặc
+   yarn dev
+   ```
+
+4. Mở trình duyệt và truy cập: `http://localhost:5173`
+
+
+## 📂 Cấu trúc dự án
+
+```
+src/
+├── components/     # UI Components
+├── contexts/       # React Contexts
+├── data/           # Mock data
+├── integrations/   # External integrations
+├── lib/            # Utility functions
+├── pages/          # Main pages
+├── styles/         # CSS styles
+└── types/          # TypeScript type definitions
 ```
 
-**Edit a file directly in GitHub**
+## 🌟 Tính năng đã cải thiện
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+- **Quản lý trạng thái đăng nhập**: Lưu trữ và kiểm tra trạng thái đăng nhập một cách nhất quán
+- **Bảo vệ Route**: Chỉ cho phép người dùng đã xác thực truy cập các trang cần xác thực
+- **Quản lý lịch sử chuyển hướng**: Ngăn chặn việc quay lại trang đăng nhập sau khi đã đăng nhập thành công
+- **Xử lý lỗi**: Cải thiện thông báo lỗi và trải nghiệm người dùng
 
-**Use GitHub Codespaces**
+## 📱 Giao diện
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Ứng dụng có giao diện hiện đại và dễ sử dụng, với các thành phần UI như:
 
-## What technologies are used for this project?
+- Header có menu điều hướng
+- Timeline hiển thị các sự kiện theo thứ tự thời gian
+- Trang thành viên với danh sách và thông tin chi tiết
+- Giao diện chat nhóm thân thiện
+- Form thêm sự kiện trực quan
 
-This project is built with:
+## 📄 Giấy phép
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+© 2025 FriendVerse Chronicles Hub. Đã đăng ký bản quyền.
 
-## How can I deploy this project?
+---
 
-Simply open [Lovable](https://lovable.dev/projects/5425ce12-6b12-4a6c-966e-d1fec32ee139) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+Phát triển bởi QuangDuyxyz - Hệ thống lưu trữ kỷ niệm cho những nhóm bạn thân.

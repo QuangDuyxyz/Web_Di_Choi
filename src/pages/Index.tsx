@@ -7,16 +7,20 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BirthdayCelebration } from '@/components/BirthdayCelebration';
 import { EventCard } from '@/components/EventCard';
+import { PostForm } from '@/components/PostForm';
+import { PostItem } from '@/components/PostItem';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBirthday } from '@/contexts/BirthdayContext';
 import { useEvents } from '@/contexts/EventsContext';
-import { CalendarIcon, Users } from 'lucide-react';
+import { usePost } from '@/contexts/PostContext';
+import { CalendarIcon, Users, RefreshCw } from 'lucide-react';
 
 const Index = () => {
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const { birthdayPeople, todaysBirthdays, showCelebration } = useBirthday();
   const { events } = useEvents();
+  const { posts, isLoading: isPostsLoading } = usePost();
   
   // Get upcoming events (next 5 events)
   const today = new Date();
@@ -63,6 +67,7 @@ const Index = () => {
         <div className="flex flex-col md:flex-row gap-6 items-start">
           {/* Main content */}
           <div className="flex-1 space-y-8">
+            {/* Phần chào mừng và sinh nhật */}
             <section>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold">Chào mừng, {user?.displayName}!</h2>
@@ -93,11 +98,41 @@ const Index = () => {
                 </Card>
               )}
               
-              <div className="grid grid-cols-1 gap-4">
-                {todaysBirthdays.map(event => (
-                  <EventCard key={event.id} event={event} />
-                ))}
+              {/* Hiển thị sinh nhật hôm nay nếu có */}
+              {todaysBirthdays.length > 0 && (
+                <div className="grid grid-cols-1 gap-4 mb-6">
+                  {todaysBirthdays.map(event => (
+                    <EventCard key={event.id} event={event} />
+                  ))}
+                </div>
+              )}
+            </section>
+            
+            {/* Form đăng bài và danh sách bài đăng */}
+            <section>
+              {/* Form đăng bài */}
+              <PostForm />
+              
+              {/* Danh sách bài đăng */}
+              <div className="mb-4 flex justify-between items-center">
+                <h2 className="text-xl font-bold">Bảng tin</h2>
+                <Button variant="outline" size="sm" className="gap-1">
+                  <RefreshCw size={14} />
+                  Làm mới
+                </Button>
               </div>
+              
+              {isPostsLoading ? (
+                <Card className="p-6 text-center">
+                  <p>Đang tải bài viết...</p>
+                </Card>
+              ) : posts.length > 0 ? (
+                posts.map(post => <PostItem key={post.id} post={post} />)
+              ) : (
+                <Card className="p-6 text-center">
+                  <p>Chưa có bài viết nào. Hãy là người đầu tiên đăng bài!</p>
+                </Card>
+              )}
             </section>
 
             <section>

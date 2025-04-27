@@ -9,21 +9,35 @@ import { useEvents } from '@/contexts/EventsContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { EventForm } from '@/components/EventForm';
 import { Event, EventType } from '@/types';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, Trash2 } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const Timeline = () => {
-  const { events } = useEvents();
+  const { events, clearAllEvents } = useEvents();
   const { isAuthenticated, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [currentEvent, setCurrentEvent] = useState<Event | undefined>(undefined);
   const [filter, setFilter] = useState<EventType | 'all'>('all');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const { toast } = useToast();
 
   if (!isAuthenticated) {
     navigate('/login');
@@ -113,10 +127,45 @@ const Timeline = () => {
           </div>
           
           {isAdmin && (
-            <Button onClick={() => navigate('/add-event')} className="mt-4 md:mt-0">
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Thêm sự kiện
-            </Button>
+            <div className="flex gap-2 mt-4 md:mt-0">
+              <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive">
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Xóa tất cả
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Xác nhận xóa tất cả sự kiện</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Bạn có chắc chắn muốn xóa tất cả sự kiện không? Hành động này không thể hoàn tác.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Hủy</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={() => {
+                        clearAllEvents();
+                        setShowClearConfirm(false);
+                        toast({
+                          title: "Xóa thành công",
+                          description: "Tất cả sự kiện đã được xóa."
+                        });
+                      }}
+                      className="bg-destructive text-destructive-foreground"
+                    >
+                      Xóa
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              
+              <Button onClick={() => navigate('/add-event')}>
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Thêm sự kiện
+              </Button>
+            </div>
           )}
         </div>
         

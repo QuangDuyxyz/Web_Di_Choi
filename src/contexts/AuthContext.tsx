@@ -1,6 +1,6 @@
 
 import { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import { User, AuthState, RegisterFormData } from '../types';
+import { User, AuthState, RegisterFormData, UserRole } from '../types';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { mockUsers } from '@/data/mockData';
@@ -11,6 +11,7 @@ interface AuthContextType extends AuthState {
   logout: () => Promise<void>;
   isAdmin: boolean;
   updateUser: (user: User) => Promise<void>;
+  updateAvatar: (userId: string, avatarUrl: string) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
 }
 
@@ -19,16 +20,82 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Mock password for development
 const MOCK_PASSWORD = 'password';
 
+// Khai báo kiểu cho window để thêm thuộc tính registeredMockUsers
+declare global {
+  interface Window {
+    registeredMockUsers: User[];
+  }
+}
+
 // Store registered users during the session (development only)
-let registeredMockUsers: User[] = [];
+// Khôi phục dữ liệu từ localStorage nếu có
+try {
+  const savedUsers = localStorage.getItem('registeredMockUsers');
+  window.registeredMockUsers = savedUsers ? JSON.parse(savedUsers) : [];
+} catch (error) {
+  console.error('Error loading registered users from localStorage:', error);
+  window.registeredMockUsers = [];
+}
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [authState, setAuthState] = useState<AuthState>({
-    isAuthenticated: false,
-    user: null,
-    isLoading: true
-  });
+  // Khởi tạo trạng thái xác thực từ localStorage nếu có
+  const initAuthState = (): AuthState => {
+    try {
+      const savedAuthState = localStorage.getItem('authState');
+      if (savedAuthState) {
+        const parsedState = JSON.parse(savedAuthState);
+        console.log('Restoring auth state from localStorage:', parsedState);
+        
+        // Thêm kiểm tra tính hợp lệ của trạng thái được khôi phục
+        if (parsedState && typeof parsedState.isAuthenticated === 'boolean') {
+          // Thêm lọc để đảm bảo có user khi isAuthenticated là true
+          if (parsedState.isAuthenticated && !parsedState.user) {
+            console.warn('Found invalid auth state: isAuthenticated true but no user');
+            return {
+              isAuthenticated: false,
+              user: null,
+              isLoading: true
+            };
+          }
+          return {
+            ...parsedState,
+            isLoading: false // Đã load xong
+          };
+        }
+      }
+    } catch (error) {
+      console.error('Error loading auth state from localStorage:', error);
+    }
+    return {
+      isAuthenticated: false,
+      user: null,
+      isLoading: true
+    };
+  };
+  
+  const [authState, setAuthState] = useState<AuthState>(initAuthState());
   const { toast } = useToast();
+  
+  // Lưu trạng thái xác thực vào localStorage khi thay đổi
+  useEffect(() => {
+    if (!authState.isLoading) { // Chỉ lưu khi đã hoàn tất quá trình kiểm tra
+      try {
+        console.log('Saving auth state to localStorage:', authState);
+        localStorage.setItem('authState', JSON.stringify(authState));
+        
+        // Kiểm tra ngay sau khi lưu để đảm bảo dữ liệu đã được lưu đúng
+        const savedState = localStorage.getItem('authState');
+        if (savedState) {
+          const parsed = JSON.parse(savedState);
+          if (parsed.isAuthenticated !== authState.isAuthenticated) {
+            console.error('Auth state not saved correctly!');
+          }
+        }
+      } catch (error) {
+        console.error('Error saving auth state to localStorage:', error);
+      }
+    }
+  }, [authState]);
 
   useEffect(() => {
     // Check Supabase connection
@@ -95,7 +162,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           displayName: data.display_name,
           birthdate: data.birthdate,
           avatar: data.avatar || `https://api.dicebear.com/7.x/avatars/svg?seed=${data.username}`,
-          role: data.role,
+          role: (data.role as UserRole) || 'user',
         };
 
         setAuthState({
@@ -118,6 +185,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const register = async (data: RegisterFormData): Promise<boolean> => {
     try {
+      // Kiểm tra xem email đã tồn tại trong danh sách người dùng đã đăng ký chưa
+      // Kiểm tra không phân biệt chữ hoa/thường
+      const existingUser = window.registeredMockUsers.find(
+        user => user.email.toLowerCase() === data.email.toLowerCase()
+      );
+      
+      if (existingUser) {
+        toast({
+          title: "Email đã tồn tại",
+          description: "Email này đã được sử dụng. Vui lòng sử dụng email khác.",
+          variant: "destructive"
+        });
+        return false;
+      }
+
       // First try with Supabase
       try {
         const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -134,7 +216,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             username: data.username,
             display_name: data.displayName,
             birthdate: data.birthdate,
-            role: 'user',
+            role: 'user' as const, // Đặt kiểu cụ thể cho role
             avatar: `https://api.dicebear.com/7.x/avatars/svg?seed=${data.username}`,
           };
 
@@ -174,14 +256,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       };
       
       // Add to local storage of registered users
-      registeredMockUsers.push(newUser);
+      window.registeredMockUsers.push(newUser);
+      
+      // Lưu vào localStorage để dữ liệu không bị mất khi làm mới trang
+      try {
+        localStorage.setItem('registeredMockUsers', JSON.stringify(window.registeredMockUsers));
+      } catch (error) {
+        console.error('Error saving registered users to localStorage:', error);
+      }
+      
+      // Đăng nhập tự động sau khi đăng ký
+      setAuthState({
+        isAuthenticated: true,
+        user: newUser,
+        isLoading: false
+      });
       
       toast({
         title: "Đăng ký thành công",
-        description: `Tài khoản ${newUser.username} đã được tạo. Bạn có thể đăng nhập ngay bây giờ.`,
+        description: `Chào mừng ${newUser.displayName} đã tham gia FriendVerse!`,
       });
       
-      console.log("Registered mock users:", registeredMockUsers);
+      console.log("Registered mock users:", window.registeredMockUsers);
       
       return true;
     } catch (error) {
@@ -207,6 +303,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (error) throw error;
         
         if (data.session) {
+          // Đăng nhập thành công với Supabase
+          // Lấy thông tin profile của người dùng
+          await getUserProfile(data.user.id);
           return true;
         }
       } catch (supabaseError) {
@@ -246,8 +345,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       
       // Check registered users during this session
-      const registeredUser = registeredMockUsers.find(user => user.email === email);
-      if (registeredUser && password === password) { // For registered users, use their actual password
+      console.log('Checking registered users:', window.registeredMockUsers);
+      console.log('Looking for email:', email);
+      const registeredUser = window.registeredMockUsers.find(user => user.email.toLowerCase() === email.toLowerCase());
+      console.log('Found user:', registeredUser);
+      
+      if (registeredUser) {
+        // Trong môi trường phát triển, chỉ kiểm tra mật khẩu cho admin
+        // Cho người dùng đã đăng ký, luôn cho phép đăng nhập
         setAuthState({
           isAuthenticated: true,
           user: registeredUser,
@@ -293,10 +398,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isLoading: false
       });
       
+      // Xóa trạng thái đăng nhập khỏi localStorage
+      try {
+        localStorage.removeItem('authState');
+      } catch (localStorageError) {
+        console.error('Error removing auth state from localStorage:', localStorageError);
+      }
+      
       toast({
         title: "Đăng xuất thành công",
         description: "Bạn đã đăng xuất khỏi hệ thống",
       });
+      
+      // Chuyển hướng về trang chủ sau khi đăng xuất
+      window.location.href = '/';
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -307,13 +422,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     
     try {
       // Try to update with Supabase
+      const updateData = {
+        username: user.username,
+        display_name: user.displayName,
+        birthdate: user.birthdate as string, // Đảm bảo birthdate là string
+      };
       const { error } = await supabase
         .from('profiles')
-        .update({
-          username: user.username,
-          display_name: user.displayName,
-          birthdate: user.birthdate,
-        })
+        .update(updateData)
         .eq('id', user.id);
 
       if (error) throw error;
@@ -358,6 +474,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (error) throw error;
       
+      // Xóa người dùng khỏi registeredMockUsers nếu có
+      if (window.registeredMockUsers) {
+        // Lọc ra người dùng cần xóa
+        window.registeredMockUsers = window.registeredMockUsers.filter(user => user.id !== userId);
+        
+        // Lưu lại vào localStorage
+        try {
+          localStorage.setItem('registeredMockUsers', JSON.stringify(window.registeredMockUsers));
+          console.log('Xóa người dùng khỏi localStorage thành công');
+        } catch (localStorageError) {
+          console.error('Lỗi khi lưu registeredMockUsers vào localStorage:', localStorageError);
+        }
+      }
+      
       toast({
         title: "Xóa thành công",
         description: "Người dùng đã được xóa khỏi hệ thống",
@@ -366,10 +496,69 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.error('Delete user error:', error);
       
       // Mock delete for development
+      // Xóa người dùng khỏi registeredMockUsers nếu có
+      if (window.registeredMockUsers) {
+        // Lọc ra người dùng cần xóa
+        window.registeredMockUsers = window.registeredMockUsers.filter(user => user.id !== userId);
+        
+        // Lưu lại vào localStorage
+        try {
+          localStorage.setItem('registeredMockUsers', JSON.stringify(window.registeredMockUsers));
+          console.log('Xóa người dùng khỏi localStorage thành công');
+        } catch (localStorageError) {
+          console.error('Lỗi khi lưu registeredMockUsers vào localStorage:', localStorageError);
+        }
+      }
+      
       toast({
         title: "Development Mode",
         description: "User deletion simulated",
       });
+    }
+  };
+
+  const updateAvatar = async (userId: string, avatarUrl: string) => {
+    try {
+      // Thử cập nhật với Supabase
+      const { error } = await supabase
+        .from('profiles')
+        .update({ avatar: avatarUrl })
+        .eq('id', userId);
+
+      if (error) throw error;
+      
+      // Cập nhật state nếu người dùng hiện tại đang thay đổi avatar
+      if (authState.user && authState.user.id === userId) {
+        setAuthState(prev => ({
+          ...prev,
+          user: prev.user ? { ...prev.user, avatar: avatarUrl } : null
+        }));
+      }
+      
+      // Cập nhật registeredMockUsers nếu đang ở chế độ development
+      if (window.registeredMockUsers) {
+        window.registeredMockUsers = window.registeredMockUsers.map(user => 
+          user.id === userId ? { ...user, avatar: avatarUrl } : user
+        );
+      }
+      
+    } catch (error) {
+      console.error('Update avatar error:', error);
+      
+      // Mock update cho môi trường development
+      if (authState.user && authState.user.id === userId) {
+        setAuthState(prev => ({
+          ...prev,
+          user: prev.user ? { ...prev.user, avatar: avatarUrl } : null
+        }));
+      }
+      
+      // Cập nhật registeredMockUsers trong chế độ development
+      if (window.registeredMockUsers) {
+        window.registeredMockUsers = window.registeredMockUsers.map(user => 
+          user.id === userId ? { ...user, avatar: avatarUrl } : user
+        );
+      }
     }
   };
 
@@ -382,6 +571,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         logout,
         isAdmin: authState.user?.role === 'admin',
         updateUser,
+        updateAvatar,
         deleteUser,
       }}
     >

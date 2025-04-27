@@ -54,35 +54,75 @@ export const EventForm = ({ editMode = false, eventToEdit }: EventFormProps) => 
       return;
     }
     
-    if (editMode && eventToEdit) {
-      updateEvent(eventToEdit.id, {
-        title,
-        date: new Date(date).toISOString(),
-        description,
-        eventType,
-        emoji: emoji || undefined
-      });
+    try {
+      // Validate date format
+      const formattedDate = new Date(date);
+      if (isNaN(formattedDate.getTime())) {
+        throw new Error('Ngày không hợp lệ');
+      }
+      
+      const dateISOString = formattedDate.toISOString();
+      
+      if (editMode && eventToEdit) {
+        updateEvent(eventToEdit.id, {
+          title,
+          date: dateISOString,
+          description,
+          eventType,
+          emoji: emoji || undefined
+        });
+        
+        // Verify data was saved by checking localStorage directly
+        const savedEvents = localStorage.getItem('friendverse-events');
+        if (savedEvents) {
+          console.log('Events saved successfully after update');
+        }
+        
+        toast({
+          title: "Cập nhật thành công",
+          description: "Sự kiện đã được cập nhật"
+        });
+      } else {
+        addEvent({
+          title,
+          date: dateISOString,
+          description,
+          eventType,
+          createdBy: user?.id || '',
+          emoji: emoji || undefined,
+          wishes: []
+        });
+        
+        // Verify data was saved by checking localStorage directly
+        const savedEvents = localStorage.getItem('friendverse-events');
+        if (savedEvents) {
+          console.log('Events saved successfully after adding new event');
+        }
+        
+        toast({
+          title: "Thêm thành công",
+          description: "Sự kiện đã được thêm vào timeline"
+        });
+      }
+      
+      // Force an additional localStorage save to ensure data persistence
+      setTimeout(() => {
+        const currentEvents = localStorage.getItem('friendverse-events');
+        if (currentEvents) {
+          localStorage.setItem('friendverse-events', currentEvents);
+          console.log('Additional localStorage save completed');
+        }
+      }, 500);
+      
+      navigate('/timeline');
+    } catch (error) {
+      console.error('Error saving event:', error);
       toast({
-        title: "Cập nhật thành công",
-        description: "Sự kiện đã được cập nhật"
-      });
-    } else {
-      addEvent({
-        title,
-        date: new Date(date).toISOString(),
-        description,
-        eventType,
-        createdBy: user?.id || '',
-        emoji: emoji || undefined,
-        wishes: []
-      });
-      toast({
-        title: "Thêm thành công",
-        description: "Sự kiện đã được thêm vào timeline"
+        title: "Lỗi",
+        description: "Có lỗi xảy ra khi lưu sự kiện. Vui lòng thử lại.",
+        variant: "destructive"
       });
     }
-    
-    navigate('/timeline');
   };
   
   return (
